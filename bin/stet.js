@@ -28,14 +28,20 @@ ${c.bold('Setup')}
   stet sync                           Regenerate AGENTS.md from .stet/
 
 ${c.bold('Before an AI task')}
-  stet scope set "<task>" --allow "src/x/**,tests/x/**"
-  stet scope [show|clear]
+  stet scope set "<task>" --allow "src/x/**,tests/x/**" [--ticket LIN-142]
+                                      A ticket ID at the start of the task ("LIN-142 Add export") is picked up too
+  stet scope [show|clear|ticket]
   stet context [--files "glob,glob"] [--changed] [--diff] [--copy|--stdout|--out file]
                                       Git-synced context pack for any AI chat (no more uploading src/)
 
 ${c.bold('After an AI task')}
   stet guard [--staged] [--base ref] [--warn]   Flag changes outside scope or in protected paths
   stet check [--only L1,L2]                      Run locked behaviours; non-zero exit if any broke
+
+${c.bold('Shipping')}
+  stet pr [--base main] [--check] [--stdout]
+                                      Commit message + PR description from the diff, scope, checks and decisions
+                                      Then: git commit -F .stet/.cache/commit.txt
 
 ${c.bold('Memory')}
   stet lock add "<behaviour>" --cmd "<proof command>" [--protect "glob,glob"]
@@ -77,9 +83,10 @@ function main() {
     case 'check': res = core.check(r, { only: fl.only }); break;
     case 'scope':
       if (!sub || sub === 'show') res = core.scopeShow(r);
-      else if (sub === 'set') res = core.scopeSet(r, rest.join(' '), { allow: fl.allow });
+      else if (sub === 'set') res = core.scopeSet(r, rest.join(' '), { allow: fl.allow, ticket: fl.ticket });
+      else if (sub === 'ticket') res = core.scopeTicket(r);
       else if (sub === 'clear') res = core.scopeClear(r);
-      else throw new core.StetError('Usage: stet scope [show|set|clear]');
+      else throw new core.StetError('Usage: stet scope [show|set|clear|ticket]');
       break;
     case 'guard': res = core.guard(r, { staged: fl.staged, base: fl.base, warn: fl.warn }); break;
     case 'context': case 'ctx': {
@@ -100,6 +107,25 @@ function main() {
       const file = path.resolve(fl.out || path.join(root, 'HANDOFF.md'));
       fs.writeFileSync(file, h.text);
       res = { code: 0, text: `${c.green('✓')} Handoff pack written to ${c.bold(path.relative(process.cwd(), file) || file)}` };
+      break;
+    }
+    case 'pr': {
+      core.setColor(false);
+      const p = core.pr(r, { base: fl.base, runCheck: fl.check });
+      core.setColor((process.stdout.isTTY || process.env.STET_COLOR === '1') && !process.env.NO_COLOR && !fl['no-color']);
+      if (fl.stdout) { process.stdout.write(p.text); return; }
+      const copied = core.copyToClipboard(p.data.pr);
+      const warn = [];
+      if (p.data.violations.length) warn.push(c.yellow(`! ${p.data.violations.length} file(s) outside scope or protected — listed in the PR text.`));
+      if (!p.data.checks) warn.push(c.yellow('! stet check has not been run for this change. Run it, or use stet pr --check.'));
+      else if (p.data.checks.some((x) => !x.ok)) warn.push(c.red('✗ A locked behaviour is failing — listed in the PR text.'));
+      res = { code: 0, text: [
+        `${c.green('✓')} ${c.bold(p.data.title)}  ${c.dim(`(${p.data.files} files)`)}`,
+        `  commit message  .stet/.cache/commit.txt   →  ${c.cyan('git commit -F .stet/.cache/commit.txt')}`,
+        `  PR description  .stet/.cache/pr.md        →  ${copied ? 'copied to clipboard' : 'open the file, or run: stet pr --stdout'}`,
+        ...warn.map((w) => '  ' + w),
+        c.dim('  Fill in the "What and why" line (or paste the PR text into your AI and ask it to write it).'),
+      ].join('\n') };
       break;
     }
     case 'status': case 'st': res = core.status(r); break;

@@ -9,6 +9,7 @@ Stet is a small, free command-line tool that gives every AI coding tool (Claude 
 - **Scope guard.** Agree the task and the files it may touch. `stet guard` flags every file changed outside scope or in protected paths, even if the agent already committed it.
 - **Git-synced context.** `stet context` builds a context pack from the live repo (charter, scope, locks, decisions, commits, uncommitted changes, file tree and the files you choose). Paste it into any chat instead of uploading your `src` folder.
 - **Decision log.** `stet decide` records "we chose X because Y", so the next session doesn't reopen it.
+- **Ticket-aware PRs.** Put the ticket ID in the scope (`LIN-142 Add CSV export`) and `stet pr` writes the commit message and PR description from the real diff, scope, check results and decisions. The git hook adds the ticket ID to every commit.
 - **Handoff pack.** `stet handoff` writes an onboarding document for a new developer or CTO, built from the repo.
 - **MCP server.** `stet mcp` exposes all of this as tools to Claude Code, Cursor and any MCP client.
 
@@ -43,13 +44,17 @@ Commit `.stet/`, `AGENTS.md` and `CLAUDE.md`. Every agent and teammate then work
 # once: lock what already works
 stet lock add "UAE VAT maths is correct" --cmd "node --test test/vat.test.js" --protect "src/vat/**"
 
-# before each AI task
-stet scope set "Add CSV export of invoices" --allow "src/export/**,test/export*"
+# before each AI task (the ticket ID is optional)
+stet scope set "LIN-142 Add CSV export of invoices" --allow "src/export/**,test/export*"
 stet context --files "src/invoices/**"     # copied to clipboard; paste into your chat
 
 # after the AI says it's done
 stet guard        # anything outside scope or in protected paths?
 stet check        # do all locked behaviours still pass?
+
+# ship it
+stet pr                                   # commit message + PR description (PR copied to clipboard)
+git commit -F .stet/.cache/commit.txt     # "LIN-142: Add CSV export of invoices" + file list
 ```
 
 Example (real output from a sample accounting app):
@@ -81,8 +86,8 @@ Checking 2 locked behaviours
 |---|---|
 | `stet init [--name X] [--mcp]` | Set up `.stet/`, `AGENTS.md` and `CLAUDE.md`. `--mcp` also writes `.mcp.json`. Safe to re-run. |
 | `stet sync` | Regenerate the Stet block in `AGENTS.md` (other commands do this automatically). |
-| `stet scope set "<task>" --allow "<globs>"` | Agree the task and the files it may touch. Records the current commit as the base. |
-| `stet scope [show\|clear]` | Show or clear the scope. |
+| `stet scope set "<task>" --allow "<globs>" [--ticket LIN-142]` | Agree the task and the files it may touch. Records the current commit as the base. A ticket ID at the start of the task is picked up automatically. |
+| `stet scope [show\|clear\|ticket]` | Show or clear the scope, or print just the ticket ID. |
 | `stet guard [--staged] [--base ref] [--warn]` | Check changes since the scope base (committed, staged, unstaged and untracked). Exits 1 on violations unless `--warn`. |
 | `stet lock add "<behaviour>" --cmd "<cmd>" [--protect "<globs>"]` | Lock a behaviour. `--protect` tells guard which files affect it. |
 | `stet lock [list\|rm L2]` | List locks with their last result, or remove one. |
@@ -90,8 +95,9 @@ Checking 2 locked behaviours
 | `stet context [--files "<globs>"] [--changed] [--diff] [--copy\|--stdout\|--out f]` | Build the context pack. By default it writes `.stet/context.md` and copies it to the clipboard. |
 | `stet decide "<decision>" [--why "<reason>"]` | Add to the decision log. |
 | `stet decisions [--all]` | List decisions. |
+| `stet pr [--base main] [--check] [--stdout]` | Write `.stet/.cache/commit.txt` and `.stet/.cache/pr.md` from the diff since the scope was set: ticket, changed files, scope result, `stet check` results and decisions logged during the task. `--check` runs the locks first. |
 | `stet handoff [--out HANDOFF.md] [--stdout]` | Generate the onboarding pack. |
-| `stet hook install [--check]` | Add a git pre-commit hook that blocks commits staging out-of-scope or protected files. `--check` also runs `stet check`. |
+| `stet hook install [--check]` | Add git hooks: pre-commit blocks commits that stage out-of-scope or protected files (`--check` also runs `stet check`); prepare-commit-msg adds the ticket ID to commit messages. |
 | `stet status` | One-screen summary. |
 | `stet mcp` / `stet mcp install` | Run the MCP server over stdio, or write `.mcp.json`. |
 
@@ -111,7 +117,7 @@ Add `--json` to any command for machine-readable output.
 
 **ChatGPT, Claude.ai, Gemini (chat):** run `stet context --files "<what you're working on>"` and paste the result.
 
-MCP tools: `stet_context`, `stet_guard`, `stet_check`, `stet_scope` (read-only; only the human sets scope) and `stet_decide`.
+MCP tools: `stet_context`, `stet_guard`, `stet_check`, `stet_scope` (read-only; only the human sets scope), `stet_pr` and `stet_decide`.
 
 ## Configuration
 

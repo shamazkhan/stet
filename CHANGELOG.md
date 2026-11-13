@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0 — 2026-11-14
+- New `stet pr`: writes the commit message and PR description from facts — the diff since the scope was set, the ticket ID, scope result, `stet check` results and decisions logged during the task. `--check` runs the locks first, `--base main` compares against a branch.
+- Ticket IDs: `stet scope set "LIN-142 Add CSV export" …` (or `--ticket LIN-142`) stores the ticket. It appears in AGENTS.md, context packs, guard output and PR text.
+- `stet hook install` now also adds a prepare-commit-msg hook that prefixes commit messages with the ticket ID ("LIN-142: …"), never twice.
+- New MCP tool `stet_pr` so Claude Code and Cursor can draft the PR text.
+- The pre-commit hook falls back to `npx stet-cli` when stet isn't installed globally.
+
 ## 0.1.3 — 2026-11-14
 - Stack detection now finds projects in subfolders (e.g. backend/, frontend/, apps/web) and languages from file types, so monorepos with Python + JavaScript are detected correctly.
 - stet init creates one test lock per sub-project (e.g. `cd backend && pytest -q`).

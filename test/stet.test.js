@@ -109,7 +109,7 @@ test('pre-commit hook blocks out-of-scope commits', () => {
   const { d, g } = repo();
   stet(d, 'init');
   stet(d, 'scope', 'set', 'CSV export', '--allow', 'src/export/**');
-  assert.match(stet(d, 'hook', 'install').out, /hook installed/);
+  assert.match(stet(d, 'hook', 'install').out, /hooks installed/);
   // make `stet` resolvable inside the hook
   const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stetbin-'));
   fs.writeFileSync(path.join(binDir, 'stet'), `#!/bin/sh\nexec "${process.execPath}" "${BIN}" "$@"\n`, { mode: 0o755 });
@@ -140,7 +140,7 @@ test('MCP server: initialize, list, call', async () => {
   const by = (id) => got.find((m) => m.id === id);
   assert.strictEqual(by(1).result.serverInfo.name, 'stet');
   assert.strictEqual(got.filter((m) => m.id === undefined).length, 0);
-  assert.deepStrictEqual(by(2).result.tools.map((t) => t.name), ['stet_context', 'stet_guard', 'stet_check', 'stet_scope', 'stet_decide']);
+  assert.deepStrictEqual(by(2).result.tools.map((t) => t.name), ['stet_context', 'stet_guard', 'stet_check', 'stet_scope', 'stet_pr', 'stet_decide']);
   assert.match(by(3).result.content[0].text, /# Context pack/);
   assert.doesNotMatch(by(3).result.content[0].text, /\x1b\[/);
   assert.match(by(4).result.content[0].text, /Logged D-002/);
@@ -176,4 +176,65 @@ test('falls back to file extensions when no manifest', () => {
   g('add', '-A'); g('commit', '-qm', 'init');
   const r = stet(d, 'init');
   assert.match(r.out, /JavaScript, Python, Express/);
+});
+
+test('ticket ID: picked up from the task or --ticket, shown in AGENTS.md and scope', () => {
+  const { d } = repo();
+  stet(d, 'init');
+  let r = stet(d, 'scope', 'set', 'LIN-142 Add CSV export', '--allow', 'src/export/**');
+  assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /LIN-142 Add CSV export/);
+  const sc = JSON.parse(fs.readFileSync(path.join(d, '.stet/scope.json')));
+  assert.strictEqual(sc.ticket, 'LIN-142'); assert.strictEqual(sc.task, 'Add CSV export');
+  assert.match(fs.readFileSync(path.join(d, 'AGENTS.md'), 'utf8'), /\*\*Ticket:\*\* LIN-142/);
+  assert.strictEqual(stet(d, 'scope', 'ticket').out.trim(), 'LIN-142');
+  r = stet(d, 'scope', 'set', 'Fix rounding', '--allow', 'src/**', '--ticket', 'eng-7');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(d, '.stet/scope.json'))).ticket, 'ENG-7');
+  assert.strictEqual(stet(d, 'scope', 'set', 'X', '--allow', 'src/**', '--ticket', 'nope').code, 1);
+});
+
+test('stet pr: commit message and PR text from diff, scope, checks and decisions', () => {
+  const { d, g } = repo();
+  stet(d, 'init');
+  stet(d, 'scope', 'set', 'LIN-142 Add CSV export', '--allow', 'src/export/**,test/**');
+  fs.writeFileSync(path.join(d, 'src/export/csv.js'), 'module.exports = (rows) => rows.join("\\n");\n');
+  fs.mkdirSync(path.join(d, 'test'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'test/csv.test.js'), 'a\nb\n');
+  g('add', 'src/export/csv.js'); g('commit', '-qm', 'wip');
+  stet(d, 'decide', 'CSV uses comma separator', '--why', 'Excel default');
+  let r = stet(d, 'pr', '--check', '--stdout');
+  assert.strictEqual(r.code, 0, r.out);
+  for (const re of [/## LIN-142: Add CSV export/, /\| `src\/export\/csv\.js` \| modified \|/, /\| `test\/csv\.test\.js` \| added \| \+2 −0 \|/, /✅ All changes are inside the agreed scope/, /✅ \*\*L1\*\* Full test suite passes/, /\*\*D-002\*\* CSV uses comma separator — Excel default/]) assert.match(r.out, re);
+  assert.doesNotMatch(r.out, /AGENTS\.md|\.stet\//);
+  const commit = fs.readFileSync(path.join(d, '.stet/.cache/commit.txt'), 'utf8');
+  assert.match(commit, /^LIN-142: Add CSV export\n\n- update src\/export\/csv\.js\n- add test\/csv\.test\.js\n$/);
+  // out-of-scope change is reported, not hidden
+  fs.writeFileSync(path.join(d, 'src/auth/login.js'), 'x\n');
+  r = stet(d, 'pr', '--stdout');
+  assert.match(r.out, /⚠️ 1 file is outside the agreed scope/); assert.match(r.out, /- `src\/auth\/login\.js`/);
+});
+
+test('stet pr without a check run says so', () => {
+  const { d } = repo();
+  stet(d, 'init');
+  stet(d, 'scope', 'set', 'Tidy', '--allow', 'src/**');
+  const r = stet(d, 'pr', '--stdout');
+  assert.match(r.out, /`stet check` has not been run/);
+  assert.match(r.out, /## Tidy/);
+});
+
+test('prepare-commit-msg hook adds the ticket ID once', () => {
+  const { d, g } = repo();
+  stet(d, 'init');
+  stet(d, 'scope', 'set', 'LIN-9 Export', '--allow', 'src/export/**');
+  stet(d, 'hook', 'install');
+  const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stetbin-'));
+  fs.writeFileSync(path.join(binDir, 'stet'), `#!/bin/sh\nexec "${process.execPath}" "${BIN}" "$@"\n`, { mode: 0o755 });
+  const env = { ...process.env, PATH: binDir + path.delimiter + process.env.PATH };
+  const commit = (m) => { const p = cp.spawnSync('git', ['commit', '-qm', m], { cwd: d, env, encoding: 'utf8' }); assert.strictEqual(p.status, 0, p.stderr); return cp.execFileSync('git', ['log', '-1', '--format=%s'], { cwd: d, encoding: 'utf8' }).trim(); };
+  fs.writeFileSync(path.join(d, 'src/export/csv.js'), '1\n'); g('add', '-A');
+  assert.strictEqual(commit('Add export'), 'LIN-9: Add export');
+  fs.writeFileSync(path.join(d, 'src/export/csv.js'), '2\n'); g('add', '-A');
+  assert.strictEqual(commit('LIN-9: tweak'), 'LIN-9: tweak');
+  assert.match(stet(d, 'hook', 'uninstall').out, /Removed/);
+  assert.doesNotMatch(fs.readFileSync(path.join(d, '.git/hooks/prepare-commit-msg'), 'utf8'), /stet/);
 });
