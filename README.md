@@ -17,7 +17,7 @@ No account. No telemetry. Your code never leaves your machine. Zero dependencies
 ## Install
 
 ```bash
-npm install -g stet        # or run any command with: npx stet <command>
+npm install -g stet-cli        # or run any command with: npx stet-cli <command>
 cd your-project
 stet init
 ```
@@ -99,12 +99,12 @@ Add `--json` to any command for machine-readable output.
 
 ## Use with your AI tools
 
-**Claude Code:** run `stet init --mcp`, or `claude mcp add stet -- npx -y stet mcp`. Claude Code reads `CLAUDE.md`, which imports `AGENTS.md`.
+**Claude Code:** run `stet init --mcp`, or `claude mcp add stet -- npx -y stet-cli mcp`. Claude Code reads `CLAUDE.md`, which imports `AGENTS.md`.
 
 **Cursor:** add this to `.cursor/mcp.json`:
 
 ```json
-{ "mcpServers": { "stet": { "command": "npx", "args": ["-y", "stet", "mcp"] } } }
+{ "mcpServers": { "stet": { "command": "npx", "args": ["-y", "stet-cli", "mcp"] } } }
 ```
 
 **Codex, Copilot, Windsurf, Gemini CLI:** they read `AGENTS.md` directly.
@@ -132,8 +132,8 @@ Globs support `*`, `**` and `?`. A bare folder name like `migrations` matches ev
 ## In CI
 
 ```yaml
-- run: npx -y stet guard --base origin/main --warn
-- run: npx -y stet check
+- run: npx -y stet-cli guard --base origin/main --warn
+- run: npx -y stet-cli check
 ```
 
 ## FAQ

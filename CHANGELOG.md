@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.2 — 2026-11-13
+- Published on npm as stet-cli (the command is still `stet`).
+
 ## 0.1.1 — 2026-11-13
 - stet check now says when a proof command cannot run (missing script, command not found) instead of reporting a regression.
 
