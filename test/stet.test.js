@@ -147,3 +147,33 @@ test('MCP server: initialize, list, call', async () => {
   assert.strictEqual(by(5).result.isError, false);
   inp.end();
 });
+
+test('detects Python and JS in subfolders (monorepo)', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'stet-mono-'));
+  const g = (...a) => cp.execFileSync('git', a, { cwd: d });
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@t'); g('config', 'user.name', 'T');
+  fs.mkdirSync(path.join(d, 'backend/tests'), { recursive: true }); fs.mkdirSync(path.join(d, 'frontend/src'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'backend/requirements.txt'), 'fastapi==0.110\npytest\n');
+  fs.writeFileSync(path.join(d, 'backend/main.py'), 'print(1)\n');
+  fs.writeFileSync(path.join(d, 'frontend/package.json'), JSON.stringify({ name: 'web', scripts: { test: 'vitest run', build: 'vite build' }, dependencies: { react: '18' }, devDependencies: { typescript: '5', vite: '5' } }));
+  fs.writeFileSync(path.join(d, 'docker-compose.yml'), 'services: {}\n');
+  g('add', '-A'); g('commit', '-qm', 'init');
+  const r = stet(d, 'init');
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /Python \(backend\/\)/); assert.match(r.out, /TypeScript \(frontend\/\)/); assert.match(r.out, /FastAPI/); assert.match(r.out, /Docker/);
+  const locks = JSON.parse(fs.readFileSync(path.join(d, '.stet/locks.json')));
+  assert.deepStrictEqual(locks.map((l) => l.cmd), ['cd backend && pytest -q', 'cd frontend && npm test']);
+  assert.match(locks[0].name, /backend\//);
+});
+
+test('falls back to file extensions when no manifest', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'stet-ext-'));
+  const g = (...a) => cp.execFileSync('git', a, { cwd: d });
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@t'); g('config', 'user.name', 'T');
+  fs.writeFileSync(path.join(d, 'package.json'), '{"name":"x","dependencies":{"express":"4"}}');
+  fs.mkdirSync(path.join(d, 'scripts'));
+  for (const n of ['a', 'b', 'c']) fs.writeFileSync(path.join(d, `scripts/${n}.py`), 'x=1\n');
+  g('add', '-A'); g('commit', '-qm', 'init');
+  const r = stet(d, 'init');
+  assert.match(r.out, /JavaScript, Python, Express/);
+});
