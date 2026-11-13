@@ -1,0 +1,13 @@
+{
+  "name": "stet",
+  "version": "0.1.1",
+  "description": "Keep AI coding agents from breaking what already works. Charter, locked behaviours, scope guard, decision log and git-synced context for Claude Code, Cursor, Codex and any chat.",
+  "bin": { "stet": "bin/stet.js" },
+  "main": "lib/core.js",
+  "files": ["bin", "lib", "README.md", "LICENSE", "CHANGELOG.md"],
+  "scripts": { "test": "node --test" },
+  "engines": { "node": ">=18" },
+  "keywords": ["ai", "agents", "claude-code", "cursor", "codex", "mcp", "agents.md", "regression", "context", "cli"],
+  "license": "MIT",
+  "author": "Shamaz Khan"
+}
