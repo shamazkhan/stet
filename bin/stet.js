@@ -63,7 +63,7 @@ ${c.bold('Team')}
   stet mcp                            Run as an MCP server (Claude Code, Cursor, any MCP client)
   stet mcp install                    Write .mcp.json for this project
 
-Docs: https://stet-8fe08a58.base44.app`;
+Docs: https://getstet.dev/docs`;
 
 async function main() {
   const { pos, fl } = parse(process.argv.slice(2));

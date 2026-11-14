@@ -1,6 +1,6 @@
 # stet
 
-**Stop AI coding agents from breaking what already works.**
+**Stop AI coding agents from breaking what already works.**  ·  Docs: [getstet.dev/docs](https://getstet.dev/docs)
 
 Stet is a small, free command-line tool that gives every AI coding tool (Claude Code, Cursor, Codex, Copilot, Windsurf or a plain chat) the same rules, the same up-to-date picture of your repo, and a hard check before work is called done.
 
