@@ -305,3 +305,39 @@ test('Linear: clear errors, and scope still works when Linear fails', async () =
     assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /Linear: .*\(scope set anyway\)/);
   } finally { L.server.close(); }
 });
+
+// ---- snapshot locks ----
+test('snapshot lock: approve, catch a change, approve on purpose, mask volatile output', () => {
+  const { d } = repo();
+  stet(d, 'init');
+  fs.writeFileSync(path.join(d, 'export.js'), 'console.log("id,net,vat\\n1,100,5\\nrun " + Date.now());\n');
+  let r = stet(d, 'lock', 'add', 'Export format is stable', '--snapshot', 'node export.js', '--mask', 'run \\d+', '--protect', 'export.js');
+  assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /snapshot of node export\.js/);
+  assert.strictEqual(fs.readFileSync(path.join(d, '.stet/snapshots/L2.txt'), 'utf8'), 'id,net,vat\n1,100,5\n<masked>\n');
+  r = stet(d, 'check', '--only', 'L2'); assert.strictEqual(r.code, 0, r.out);
+  assert.match(fs.readFileSync(path.join(d, 'AGENTS.md'), 'utf8'), /must match the approved snapshot/);
+  // behaviour change: column order
+  fs.writeFileSync(path.join(d, 'export.js'), 'console.log("id,vat,net\\n1,5,100\\nrun " + Date.now());\n');
+  r = stet(d, 'check', '--only', 'L2');
+  assert.strictEqual(r.code, 1); assert.match(r.out, /- id,net,vat/); assert.match(r.out, /\+ id,vat,net/); assert.match(r.out, /stet lock approve L2/);
+  // intended change
+  r = stet(d, 'lock', 'approve', 'L2', '--why', 'VAT before net, PRO-91');
+  assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /Approved new output for L2/);
+  assert.strictEqual(stet(d, 'check', '--only', 'L2').code, 0);
+  assert.match(fs.readFileSync(path.join(d, '.stet/decisions.md'), 'utf8'), /Approved new snapshot for L2 Export format is stable\nVAT before net, PRO-91/);
+  assert.match(stet(d, 'lock', 'list').out, /L2 +Export format is stable  \[snapshot\]/);
+});
+
+test('snapshot lock: guard flags hand-edited snapshots; bad commands are refused', () => {
+  const { d } = repo();
+  stet(d, 'init');
+  fs.writeFileSync(path.join(d, 'routes.js'), 'console.log("GET /invoices\\nPOST /export");\n');
+  stet(d, 'lock', 'add', 'API routes unchanged', '--snapshot', 'node routes.js');
+  assert.match(stet(d, 'guard').out, /All changes are inside scope|No changes yet/);
+  fs.appendFileSync(path.join(d, '.stet/snapshots/L2.txt'), 'GET /sneaky\n');
+  const g = stet(d, 'guard');
+  assert.strictEqual(g.code, 1); assert.match(g.out, /\.stet\/snapshots\/L2\.txt  edited outside stet lock approve/);
+  assert.strictEqual(stet(d, 'lock', 'add', 'Bad', '--snapshot', 'node -e "process.exit(3)"').code, 1);
+  assert.match(stet(d, 'lock', 'add', 'Empty', '--snapshot', 'node -e ""').out, /printed nothing/);
+  assert.match(stet(d, 'lock', 'approve', 'L1').out, /command lock, not a snapshot/);
+});

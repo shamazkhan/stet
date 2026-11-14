@@ -49,6 +49,9 @@ ${c.bold('Shipping')}
 
 ${c.bold('Memory')}
   stet lock add "<behaviour>" --cmd "<proof command>" [--protect "glob,glob"]
+  stet lock add "<behaviour>" --snapshot "<command that prints it>" [--mask "<regex>"]
+                                      Locks the output itself (an export, a route list…); any change fails stet check
+  stet lock approve L3 --why "<reason>"         Accept an intended output change (logged as a decision)
   stet lock [list|rm L2]
   stet decide "<decision>" [--why "<reason>"]   Append to the decision log
   stet decisions [--all]
@@ -80,9 +83,10 @@ async function main() {
     case 'decisions': res = core.decisions(r, { all: fl.all }); break;
     case 'lock': case 'locks':
       if (!sub || sub === 'list' || sub === 'ls') res = core.lockList(r);
-      else if (sub === 'add') res = core.lockAdd(r, rest.join(' '), { cmd: fl.cmd, protect: fl.protect });
+      else if (sub === 'add') res = core.lockAdd(r, rest.join(' '), { cmd: fl.cmd, protect: fl.protect, snapshot: fl.snapshot, mask: fl.mask });
+      else if (sub === 'approve') res = core.lockApprove(r, rest[0], { why: fl.why });
       else if (sub === 'rm' || sub === 'remove') res = core.lockRm(r, rest[0]);
-      else throw new core.StetError('Usage: stet lock [list|add|rm]');
+      else throw new core.StetError('Usage: stet lock [list|add|rm|approve]');
       break;
     case 'check': res = core.check(r, { only: fl.only }); break;
     case 'scope':

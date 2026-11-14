@@ -6,6 +6,7 @@ Stet is a small, free command-line tool that gives every AI coding tool (Claude 
 
 - **Charter → `AGENTS.md`.** Write your product context and do's and don'ts once in `.stet/charter.md`. Stet keeps `AGENTS.md` (read by Codex, Cursor, Copilot and others) and `CLAUDE.md` in sync.
 - **Locked behaviours.** Lock what already works, each with a command that proves it. `stet check` runs them all. If one fails, the AI fixes its change, not the test.
+- **Snapshot locks.** Lock the *output* of a command (an export file, a list of API routes, mapped integration data). If it changes, `stet check` fails with a diff; `stet lock approve` accepts an intended change and logs why. No test file needed.
 - **Scope guard.** Agree the task and the files it may touch. `stet guard` flags every file changed outside scope or in protected paths, even if the agent already committed it.
 - **Git-synced context.** `stet context` builds a context pack from the live repo (charter, scope, locks, decisions, commits, uncommitted changes, file tree and the files you choose). Paste it into any chat instead of uploading your `src` folder.
 - **Decision log.** `stet decide` records "we chose X because Y", so the next session doesn't reopen it.
@@ -82,6 +83,33 @@ Checking 2 locked behaviours
 ✗ 1 locked behaviour broken: L2. Fix the change, not the check.
 ```
 
+## Snapshot locks
+
+Many regressions are behaviour changes nobody wrote a test for: an export's column order, a renamed route, a mapping that shifted. Snapshot locks catch them with a tiny script that **prints** the behaviour:
+
+```bash
+stet lock add "Export format is stable" --snapshot "node scripts/export-sample.js" --protect "src/exports/**"
+stet lock add "API routes unchanged"   --snapshot "node scripts/print-routes.js"
+stet lock add "Report totals"          --snapshot "python scripts/report.py" --mask "\d{4}-\d\d-\d\dT[\d:.]+Z"
+```
+
+Stet saves the output to `.stet/snapshots/` as the approved version (commit it). From then on:
+
+```
+$ stet check
+✗ L3   Export format is stable (0.2s, snapshot)
+     │ output differs from the approved snapshot (- approved, + now):
+     │ @@ line 1 @@
+     │ - id,net,vat
+     │ + id,vat,net
+     │ intended? approve it: stet lock approve L3 --why "<reason>"
+```
+
+- **Intended change?** `stet lock approve L3 --why "PRO-91: VAT before net"` saves the new output and logs a decision.
+- **Volatile output** (timestamps, generated IDs)? Add `--mask "<regex>"`; matches become `<masked>`.
+- **Tampering:** `stet guard` flags any snapshot file edited by hand instead of through `stet lock approve`, and AGENTS.md tells agents never to approve snapshots themselves.
+- Keep snapshot scripts deterministic: fixed sample data, sorted output, no network.
+
 ## Commands
 
 | Command | What it does |
@@ -92,6 +120,8 @@ Checking 2 locked behaviours
 | `stet scope [show\|clear\|ticket]` | Show or clear the scope, or print just the ticket ID. |
 | `stet guard [--staged] [--base ref] [--warn]` | Check changes since the scope base (committed, staged, unstaged and untracked). Exits 1 on violations unless `--warn`. |
 | `stet lock add "<behaviour>" --cmd "<cmd>" [--protect "<globs>"]` | Lock a behaviour. `--protect` tells guard which files affect it. |
+| `stet lock add "<behaviour>" --snapshot "<cmd>" [--mask "<regex>"]` | Lock a command's output as an approved snapshot in `.stet/snapshots/`. |
+| `stet lock approve L3 --why "<reason>"` | Accept a changed snapshot on purpose; logged as a decision. |
 | `stet lock [list\|rm L2]` | List locks with their last result, or remove one. |
 | `stet check [--only L1,L2]` | Run locked behaviours. Exits 1 if any fail and shows the failing lines. |
 | `stet context [--files "<globs>"] [--changed] [--diff] [--copy\|--stdout\|--out f]` | Build the context pack. By default it writes `.stet/context.md` and copies it to the clipboard. |

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 — 2026-11-14
+- Snapshot locks: `stet lock add "<behaviour>" --snapshot "<command>"` saves the command's output as the approved version in `.stet/snapshots/`. `stet check` fails with a line diff when the output changes (export column order, routes, mapped data…).
+- `stet lock approve L3 --why "…"` accepts an intended change and logs it as a decision.
+- `--mask "<regex>"` hides volatile output such as timestamps and generated IDs.
+- `stet guard` flags snapshot files edited by hand; AGENTS.md and the MCP tools tell agents never to approve snapshots.
+
 ## 0.3.0 — 2026-11-14
 - Linear integration (optional, needs `LINEAR_API_KEY`): `stet ticket LIN-142` fetches a ticket; `stet scope set LIN-142 --allow …` uses the Linear title as the task.
 - The ticket (title, status, priority, labels, link, description) is included at the top of `stet context`, so one paste gives your AI the ticket and the code.
