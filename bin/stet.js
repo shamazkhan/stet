@@ -38,6 +38,12 @@ ${c.bold('After an AI task')}
   stet guard [--staged] [--base ref] [--warn]   Flag changes outside scope or in protected paths
   stet check [--only L1,L2]                      Run locked behaviours; non-zero exit if any broke
 
+${c.bold('Understand the code')}
+  stet study "<topic>" [--out file] [--max 12]   Map a flow: key files, routes, diagram, tests, what protects it
+                                      Writes docs/flows/<topic>.md; your notes in it are kept on refresh
+  stet study                          List studied flows and which are out of date
+  stet context --flow <topic>         The flow doc + its key files, for your AI
+
 ${c.bold('Linear')}  (optional · needs LINEAR_API_KEY in your shell)
   stet ticket LIN-142 [--stdout|--json]   Fetch a ticket; it goes into stet context and stet pr
   stet scope set LIN-142 --allow "<globs>"  Uses the Linear title as the task
@@ -115,7 +121,7 @@ async function main() {
     case 'guard': res = core.guard(r, { staged: fl.staged, base: fl.base, warn: fl.warn }); break;
     case 'context': case 'ctx': {
       core.setColor(false);
-      const ctx = core.context(r, { files: fl.files, changed: fl.changed, diff: fl.diff, maxKB: fl['max-kb'] });
+      const ctx = core.context(r, { files: fl.files, changed: fl.changed, diff: fl.diff, maxKB: fl['max-kb'], flow: fl.flow });
       core.setColor((process.stdout.isTTY || process.env.STET_COLOR === '1') && !process.env.NO_COLOR && !fl['no-color']);
       if (fl.stdout) { process.stdout.write(ctx.text); return; }
       const file = fl.out ? path.resolve(fl.out) : r.p('context.md');
@@ -169,6 +175,18 @@ async function main() {
       res.text += '\n' + [
         '', c.dim(`  Saved for this repo. ${r.scope.ticket === issue.identifier ? 'It is included in stet context and stet pr.' : `Start work on it: stet scope set ${issue.identifier} --allow "<globs>"`}`),
       ].join('\n');
+      break;
+    }
+    case 'study': {
+      const study = require('../lib/study');
+      const topic = [sub, ...rest].filter(Boolean).join(' ');
+      if (!topic) { res = study.list(r); break; }
+      core.setColor(false);
+      const st = study.study(r, topic, { out: fl.out, max: fl.max });
+      core.setColor((process.stdout.isTTY || process.env.STET_COLOR === '1') && !process.env.NO_COLOR && !fl['no-color']);
+      if (fl.stdout) { process.stdout.write(st.data.markdown); return; }
+      res = { code: 0, text: st.text.replace(/\x1b\[[0-9;]*m/g, ''), data: { doc: st.data.doc, key: st.data.key, routes: st.data.routes } };
+      if (process.stdout.isTTY && !fl['no-color']) res.text = st.text;
       break;
     }
     case 'status': case 'st': res = core.status(r); break;

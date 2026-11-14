@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.4.0 — 2026-11-14
+## 0.6.0 — 2026-11-14
+- New `stet study "<topic>"`: maps how a part of the codebase works from the code itself — key files, the supporting files they use, entry points (routes in Express, Fastify, FastAPI, Flask, NestJS, Django), a Mermaid flow diagram, covering tests, what protects it (with suggested locks for gaps), recent changes and related decisions. Writes `docs/flows/<topic>.md`.
+- Re-running `stet study` refreshes the generated block and keeps your **How it works** and **Notes** sections.
+- Drift detection: `stet study` (no topic) and `stet status` flag flows whose code changed since the doc was written.
+- `stet context --flow <topic>` packs the flow doc with all its files for your AI; the doc includes a ready "explain this" prompt.
+- `stet handoff` lists documented flows; new MCP tool `stet_study`.
+- `stet help` links to getstet.dev/docs.
+
+## 0.5.0 — 2026-11-14
 - Snapshot locks: `stet lock add "<behaviour>" --snapshot "<command>"` saves the command's output as the approved version in `.stet/snapshots/`. `stet check` fails with a line diff when the output changes (export column order, routes, mapped data…).
 - `stet lock approve L3 --why "…"` accepts an intended change and logs it as a decision.
 - `--mask "<regex>"` hides volatile output such as timestamps and generated IDs.

@@ -140,7 +140,7 @@ test('MCP server: initialize, list, call', async () => {
   const by = (id) => got.find((m) => m.id === id);
   assert.strictEqual(by(1).result.serverInfo.name, 'stet');
   assert.strictEqual(got.filter((m) => m.id === undefined).length, 0);
-  assert.deepStrictEqual(by(2).result.tools.map((t) => t.name), ['stet_context', 'stet_guard', 'stet_check', 'stet_scope', 'stet_pr', 'stet_decide']);
+  assert.deepStrictEqual(by(2).result.tools.map((t) => t.name), ['stet_context', 'stet_guard', 'stet_check', 'stet_scope', 'stet_pr', 'stet_study', 'stet_decide']);
   assert.match(by(3).result.content[0].text, /# Context pack/);
   assert.doesNotMatch(by(3).result.content[0].text, /\x1b\[/);
   assert.match(by(4).result.content[0].text, /Logged D-002/);
@@ -340,4 +340,66 @@ test('snapshot lock: guard flags hand-edited snapshots; bad commands are refused
   assert.strictEqual(stet(d, 'lock', 'add', 'Bad', '--snapshot', 'node -e "process.exit(3)"').code, 1);
   assert.match(stet(d, 'lock', 'add', 'Empty', '--snapshot', 'node -e ""').out, /printed nothing/);
   assert.match(stet(d, 'lock', 'approve', 'L1').out, /command lock, not a snapshot/);
+});
+
+// ---- stet study ----
+function reconRepo() {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'stet-study-'));
+  const g = (...a) => cp.execFileSync('git', a, { cwd: d });
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@t'); g('config', 'user.name', 'T');
+  const w = (f, t) => { fs.mkdirSync(path.join(d, path.dirname(f)), { recursive: true }); fs.writeFileSync(path.join(d, f), t); };
+  w('package.json', '{"name":"r","dependencies":{"express":"4"}}');
+  w('src/money/round.js', 'const round2 = (x) => Math.round(x * 100) / 100;\nmodule.exports = { round2 };\n');
+  w('src/recon/rules.js', 'function isMatch(b, l) { return b.amount === l.amount; }\nmodule.exports = { isMatch };\n');
+  w('src/recon/engine.js', "const { isMatch } = require('./rules');\nconst { round2 } = require('../money/round');\nfunction reconcile(bank, ledger) { return bank.filter((b) => ledger.some((l) => isMatch(b, l))); }\nmodule.exports = { reconcile };\n");
+  w('src/routes/recon.js', "const router = require('express').Router();\nconst { reconcile } = require('../recon/engine');\nrouter.post('/reconcile', (req, res) => res.json(reconcile(req.body.bank, req.body.ledger)));\nrouter.get('/health', (req, res) => res.send('ok'));\nmodule.exports = router;\n");
+  w('src/billing/invoice.js', 'function invoice() { return 1; }\nmodule.exports = { invoice };\n');
+  w('tests/recon.test.js', "const { reconcile } = require('../src/recon/engine');\n");
+  w('api/recon_service.py', 'def reconcile_statement(lines):\n    return lines\n');
+  w('api/main.py', 'from fastapi import APIRouter\nfrom api.recon_service import reconcile_statement\nrouter = APIRouter()\n@router.post("/statements/reconcile")\ndef run(lines):\n    return reconcile_statement(lines)\n');
+  g('add', '-A'); g('commit', '-qm', 'init');
+  return d;
+}
+
+test('stet study maps key files, supporting files, routes, flow, tests and protection', () => {
+  const d = reconRepo();
+  stet(d, 'init');
+  stet(d, 'lock', 'add', 'Recon rules', '--cmd', 'node -e 0', '--protect', 'src/recon/rules.js');
+  const r = stet(d, 'study', 'reconciliation');
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /docs\/flows\/reconciliation\.md/);
+  const doc = fs.readFileSync(path.join(d, 'docs/flows/reconciliation.md'), 'utf8');
+  assert.match(doc, /\| `src\/recon\/engine\.js` \| defines reconcile/);
+  assert.match(doc, /\| `src\/recon\/rules\.js` \| `isMatch` \|/);               // supporting file found via imports
+  assert.match(doc, /\| POST \| `\/reconcile` \| `src\/routes\/recon\.js` \|/);
+  assert.match(doc, /\| POST \| `\/statements\/reconcile` \| `api\/main\.py` \|/); // Python / FastAPI route
+  assert.doesNotMatch(doc, /\/health/);                                          // unrelated route left out
+  assert.doesNotMatch(doc, /billing\/invoice/);                                  // unrelated code left out
+  assert.match(doc, /```mermaid\nflowchart LR/); assert.match(doc, /n\d+ --> n\d+/);
+  assert.match(doc, /- `tests\/recon\.test\.js`/);
+  assert.match(doc, /✅ `src\/recon\/rules\.js` — L1/); assert.match(doc, /⚠️ `src\/recon\/engine\.js` — not protected/);
+  assert.match(doc, /--cmd "node --test tests\/recon\.test\.js"/);
+  assert.match(doc, /stet context --flow reconciliation/);
+});
+
+test('stet study keeps your notes, tracks drift, and feeds stet context --flow', () => {
+  const d = reconRepo();
+  stet(d, 'init');
+  stet(d, 'study', 'reconciliation');
+  const f = path.join(d, 'docs/flows/reconciliation.md');
+  fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/## How it works\n.*\n/, '## How it works\nAmounts must match exactly.\n'));
+  assert.match(stet(d, 'study').out, /up to date/);
+  fs.appendFileSync(path.join(d, 'src/recon/rules.js'), '// changed\n');
+  let r = stet(d, 'study');
+  assert.match(r.out, /1 key file changed since written \(src\/recon\/rules\.js\)/);
+  assert.match(stet(d, 'status').out, /1 out of date: reconciliation/);
+  r = stet(d, 'study', 'reconciliation');
+  assert.match(r.out, /refreshed; your notes kept/);
+  assert.match(fs.readFileSync(f, 'utf8'), /Amounts must match exactly\./);
+  assert.match(stet(d, 'study').out, /up to date/);
+  r = stet(d, 'context', '--flow', 'reconciliation', '--stdout');
+  assert.match(r.out, /## Flow: Reconciliation/); assert.match(r.out, /### src\/recon\/rules\.js/); assert.match(r.out, /Amounts must match exactly/);
+  assert.match(stet(d, 'handoff', '--stdout').out, /\*\*reconciliation\*\* — \[`docs\/flows\/reconciliation\.md`\]/);
+  assert.strictEqual(stet(d, 'study', 'zzzqqq').code, 1);
+  assert.strictEqual(stet(d, 'context', '--flow', 'nope', '--stdout').code, 1);
 });

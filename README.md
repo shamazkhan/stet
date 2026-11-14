@@ -12,6 +12,7 @@ Stet is a small, free command-line tool that gives every AI coding tool (Claude 
 - **Decision log.** `stet decide` records "we chose X because Y", so the next session doesn't reopen it.
 - **Linear tickets.** `stet scope set LIN-142 --allow "…"` pulls the ticket's title and description from Linear into the context pack, so your AI gets the ticket and the code in one paste.
 - **Ticket-aware PRs.** Put the ticket ID in the scope (`LIN-142 Add CSV export`) and `stet pr` writes the commit message and PR description from the real diff, scope, check results and decisions. The git hook adds the ticket ID to every commit.
+- **Repo study.** `stet study "reconciliation"` maps how a part of the code works: key files, the files they depend on, entry points (routes), an import-flow diagram, the tests that cover it and what protects it. It writes `docs/flows/reconciliation.md`, keeps your own notes on refresh, and tells you when the code has changed since.
 - **Handoff pack.** `stet handoff` writes an onboarding document for a new developer or CTO, built from the repo.
 - **MCP server.** `stet mcp` exposes all of this as tools to Claude Code, Cursor and any MCP client.
 
@@ -129,12 +130,41 @@ $ stet check
 | `stet decisions [--all]` | List decisions. |
 | `stet ticket [LIN-142] [--stdout] [--cached]` | Fetch a Linear ticket (needs `LINEAR_API_KEY`). It is included in `stet context` and linked in `stet pr`. With no ID, shows the current scope's ticket. |
 | `stet pr [--base main] [--check] [--stdout]` | Write `.stet/.cache/commit.txt` and `.stet/.cache/pr.md` from the diff since the scope was set: ticket, changed files, scope result, `stet check` results and decisions logged during the task. `--check` runs the locks first. |
+| `stet study "<topic>" [--out file] [--max 12]` | Map a flow: key and supporting files, routes, Mermaid diagram, tests, protection gaps. Writes `docs/flows/<topic>.md`. |
+| `stet study` | List studied flows and which are out of date. |
+| `stet context --flow <topic>` | Context pack with the flow doc and all its files. |
 | `stet handoff [--out HANDOFF.md] [--stdout]` | Generate the onboarding pack. |
 | `stet hook install [--check]` | Add git hooks: pre-commit blocks commits that stage out-of-scope or protected files (`--check` also runs `stet check`); prepare-commit-msg adds the ticket ID to commit messages. |
 | `stet status` | One-screen summary. |
 | `stet mcp` / `stet mcp install` | Run the MCP server over stdio, or write `.mcp.json`. |
 
 Add `--json` to any command for machine-readable output.
+
+## Repo study
+
+Took over a codebase, or about to change a part you don't know well?
+
+```bash
+stet study "reconciliation"
+```
+
+Writes `docs/flows/reconciliation.md` from the code itself:
+
+- **Entry points:** routes that lead into it (Express, Fastify, FastAPI, Flask, NestJS, Django `path()`)
+- **Flow:** a Mermaid diagram of which file uses which (GitHub renders it)
+- **Key files** and the **supporting files** they depend on, with their main functions
+- **Tests** that cover it, and **what protects it** (locks, protected paths), with suggested `stet lock` commands for the gaps
+- **Recent changes** and related **decisions**
+
+Then get the explanation from your AI:
+
+```bash
+stet context --flow reconciliation   # the flow doc + all its files, copied to your clipboard
+```
+
+The doc includes a ready prompt. Paste the answer into its **How it works** section: Stet keeps that section and your **Notes** when you refresh the doc. `stet study` on its own lists your flows and flags the ones whose code changed since they were written; `stet status` and `stet handoff` include them too.
+
+Works best with JavaScript/TypeScript and Python (imports and routes are understood); other languages get key files, symbols and tests.
 
 ## Linear
 
@@ -170,7 +200,7 @@ Tickets are cached in `.stet/.cache/` (gitignored). Only the ticket ID is sent t
 
 **ChatGPT, Claude.ai, Gemini (chat):** run `stet context --files "<what you're working on>"` and paste the result.
 
-MCP tools: `stet_context`, `stet_guard`, `stet_check`, `stet_scope` (read-only; only the human sets scope), `stet_pr` and `stet_decide`.
+MCP tools: `stet_context`, `stet_guard`, `stet_check`, `stet_scope` (read-only; only the human sets scope), `stet_pr`, `stet_study` and `stet_decide`.
 
 ## Configuration
 
