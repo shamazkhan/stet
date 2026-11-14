@@ -403,3 +403,111 @@ test('stet study keeps your notes, tracks drift, and feeds stet context --flow',
   assert.strictEqual(stet(d, 'study', 'zzzqqq').code, 1);
   assert.strictEqual(stet(d, 'context', '--flow', 'nope', '--stdout').code, 1);
 });
+
+// ---------- 0.6.1: carried files, scope done, duplicate locks ----------
+test('scope set carries uncommitted earlier work; guard ignores it until it changes again', () => {
+  const { d } = repo();
+  stet(d, 'init');
+  // Task 1 left work uncommitted (a modified file and a new one).
+  fs.writeFileSync(path.join(d, 'src/auth/login.js'), 'module.exports = () => false;\n');
+  fs.writeFileSync(path.join(d, 'src/auth/new.js'), '1;\n');
+  let r = stet(d, 'scope', 'set', 'CSV export', '--allow', 'src/export/**');
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /2 uncommitted files from earlier work\. Carried/);
+  fs.writeFileSync(path.join(d, 'src/export/csv.js'), 'module.exports = 1;\n');
+  r = stet(d, 'guard');
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /2 carried files from earlier work, unchanged/);
+  assert.match(r.out, /All changes are inside scope/);
+  assert.match(stet(d, 'scope').out, /Carried .*src\/auth\/login\.js/);
+  // The agent touches a carried file during this task: that is a real catch.
+  fs.writeFileSync(path.join(d, 'src/auth/login.js'), 'module.exports = () => null;\n');
+  r = stet(d, 'guard');
+  assert.strictEqual(r.code, 1, r.out);
+  assert.match(r.out, /src\/auth\/login\.js\s+carried from earlier work, changed during this task/);
+});
+
+test('scope set --strict refuses a dirty tree', () => {
+  const { d } = repo();
+  stet(d, 'init');
+  fs.writeFileSync(path.join(d, 'src/auth/login.js'), 'x;\n');
+  const r = stet(d, 'scope', 'set', 'CSV export', '--allow', 'src/export/**', '--strict');
+  assert.strictEqual(r.code, 1, r.out);
+  assert.match(r.out, /--strict: 1 uncommitted file from earlier work/);
+  assert.match(stet(d, 'scope').out, /No scope set/);
+});
+
+test('guard hints at leftovers; scope carry --all marks them as earlier work', () => {
+  const { d } = repo();
+  stet(d, 'init');
+  // An old uncommitted file that existed before the scope but wasn't carried (e.g. scope set on 0.6.0).
+  const f = path.join(d, 'src/auth/old.js');
+  fs.writeFileSync(f, 'old;\n');
+  stet(d, 'scope', 'set', 'CSV export', '--allow', 'src/export/**');
+  const s = JSON.parse(fs.readFileSync(path.join(d, '.stet/scope.json'), 'utf8'));
+  s.carried = []; fs.writeFileSync(path.join(d, '.stet/scope.json'), JSON.stringify(s));
+  const past = new Date(Date.now() - 3600e3); fs.utimesSync(f, past, past);
+  let r = stet(d, 'guard');
+  assert.strictEqual(r.code, 1, r.out);
+  assert.match(r.out, /These look like leftovers from before this scope was set\. If so: stet scope carry --all/);
+  r = stet(d, 'scope', 'carry', '--all');
+  assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /Carried 1 file as earlier work/);
+  r = stet(d, 'guard');
+  assert.strictEqual(r.code, 0, r.out);
+  // Carry by path, and a path with no changes is refused.
+  assert.strictEqual(stet(d, 'scope', 'carry', 'src/nope.js').code, 1);
+});
+
+test('scope done --commit commits only the task files and closes the scope', () => {
+  const { d, g } = repo();
+  stet(d, 'init'); g('add', '-A'); g('commit', '-qm', 'stet');
+  fs.writeFileSync(path.join(d, 'src/auth/login.js'), 'leftover;\n'); // earlier work, stays uncommitted
+  stet(d, 'scope', 'set', 'CSV export', '--allow', 'src/export/**');
+  fs.writeFileSync(path.join(d, 'src/export/csv.js'), 'module.exports = 2;\n');
+  const r = stet(d, 'scope', 'done', '--commit');
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /Committed 1 file/); assert.match(r.out, /Scope closed/);
+  const last = cp.execFileSync('git', ['show', '--name-only', '--format=%s', 'HEAD'], { cwd: d, encoding: 'utf8' });
+  assert.match(last, /src\/export\/csv\.js/); assert.doesNotMatch(last, /login\.js/);
+  assert.match(cp.execFileSync('git', ['status', '--porcelain'], { cwd: d, encoding: 'utf8' }), /src\/auth\/login\.js/);
+  assert.match(stet(d, 'scope').out, /No scope set/);
+});
+
+test('scope done refuses while out of scope, unless --force', () => {
+  const { d } = repo();
+  stet(d, 'init');
+  stet(d, 'scope', 'set', 'CSV export', '--allow', 'src/export/**');
+  fs.writeFileSync(path.join(d, 'src/auth/login.js'), 'drift;\n');
+  let r = stet(d, 'scope', 'done');
+  assert.strictEqual(r.code, 1, r.out); assert.match(r.out, /Not finished: out-of-scope changes/);
+  assert.match(stet(d, 'scope').out, /CSV export/);
+  r = stet(d, 'scope', 'done', '--force');
+  assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /Scope closed\. \(forced\)/);
+});
+
+test('init lists the locks it created; lock add refuses duplicate commands', () => {
+  const { d } = repo();
+  const i = stet(d, 'init');
+  assert.match(i.out, /locked:\s+L1 Full test suite passes \(npm test\)/);
+  assert.match(i.out, /Your test suite is already locked \(L1\)/);
+  let r = stet(d, 'lock', 'add', 'Tests pass', '--cmd', 'npm   test');
+  assert.strictEqual(r.code, 1, r.out);
+  assert.match(r.out, /L1 "Full test suite passes" already runs `npm test`\. Not added\./);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(d, '.stet/locks.json'), 'utf8')).length, 1);
+  r = stet(d, 'lock', 'rename', 'L1', 'Tests pass');
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(fs.readFileSync(path.join(d, 'AGENTS.md'), 'utf8'), /\| L1 \| Tests pass \|/);
+  r = stet(d, 'lock', 'add', 'Tests again', '--cmd', 'npm test', '--force');
+  assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /Locked L2/);
+});
+
+test('pr leaves carried earlier work out of the change list', () => {
+  const { d } = repo();
+  stet(d, 'init');
+  fs.writeFileSync(path.join(d, 'src/auth/login.js'), 'leftover;\n');
+  stet(d, 'scope', 'set', 'CSV export', '--allow', 'src/export/**');
+  fs.writeFileSync(path.join(d, 'src/export/csv.js'), 'module.exports = 3;\n');
+  stet(d, 'pr');
+  const md = fs.readFileSync(path.join(d, '.stet/.cache/pr.md'), 'utf8');
+  assert.match(md, /src\/export\/csv\.js/); assert.doesNotMatch(md, /login\.js/);
+});

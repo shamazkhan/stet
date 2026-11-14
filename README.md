@@ -118,9 +118,13 @@ $ stet check
 | `stet init [--name X] [--mcp]` | Set up `.stet/`, `AGENTS.md` and `CLAUDE.md`. `--mcp` also writes `.mcp.json`. Safe to re-run. |
 | `stet sync` | Regenerate the Stet block in `AGENTS.md` (other commands do this automatically). |
 | `stet scope set "<task>" --allow "<globs>" [--ticket LIN-142]` | Agree the task and the files it may touch. Records the current commit as the base. A ticket ID at the start of the task is picked up automatically. |
+| `stet scope set … --strict` | Refuse to start a scope while there are uncommitted files. Without it, earlier uncommitted work is *carried*: guard ignores it unless it changes again. |
+| `stet scope carry <file,…>` / `--all` | Mark files guard flagged as leftovers from before the scope. |
+| `stet scope done [--commit] [--force]` | Run guard and check, commit only the task's files (with the `stet pr` message) and close the scope. |
 | `stet scope [show\|clear\|ticket]` | Show or clear the scope, or print just the ticket ID. |
 | `stet guard [--staged] [--base ref] [--warn]` | Check changes since the scope base (committed, staged, unstaged and untracked). Exits 1 on violations unless `--warn`. |
-| `stet lock add "<behaviour>" --cmd "<cmd>" [--protect "<globs>"]` | Lock a behaviour. `--protect` tells guard which files affect it. |
+| `stet lock add "<behaviour>" --cmd "<cmd>" [--protect "<globs>"]` | Lock a behaviour. `--protect` tells guard which files affect it. A command that is already locked is refused (`--force` to add anyway). |
+| `stet lock rename L1 "<behaviour>"` | Rename a lock, e.g. the test-suite lock `stet init` creates. |
 | `stet lock add "<behaviour>" --snapshot "<cmd>" [--mask "<regex>"]` | Lock a command's output as an approved snapshot in `.stet/snapshots/`. |
 | `stet lock approve L3 --why "<reason>"` | Accept a changed snapshot on purpose; logged as a decision. |
 | `stet lock [list\|rm L2]` | List locks with their last result, or remove one. |

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.1 — 2026-11-15
+Fixes from early-tester feedback (thank you!).
+- **Carried files.** `stet scope set` now notices uncommitted work from an earlier task and carries it: guard ignores those files while they stay unchanged, and flags them clearly ("carried from earlier work, changed during this task") if the agent touches them again. Previously they were reported as out of scope.
+- `--strict` on `stet scope set` refuses to start a scope until the working tree is clean, for teams that want one task per commit.
+- `stet scope carry <file,…>` / `stet scope carry --all` marks files as earlier work after the fact. Guard now suggests it when out-of-scope files look like leftovers from before the scope was set.
+- New `stet scope done [--commit]`: runs guard and check, commits only the task's files with the `stet pr` message, and closes the scope. Refuses while something is out of scope or failing (`--force` to close anyway).
+- `stet pr` leaves carried earlier work out of the change list.
+- `stet lock add` refuses a command that is already locked and names the existing lock (`--force` to add anyway). New `stet lock rename L1 "<behaviour>"`.
+- `stet init` lists the locks it created (your test suite) so they aren't added twice.
+
 ## 0.6.0 — 2026-11-14
 - New `stet study "<topic>"`: maps how a part of the codebase works from the code itself — key files, the supporting files they use, entry points (routes in Express, Fastify, FastAPI, Flask, NestJS, Django), a Mermaid flow diagram, covering tests, what protects it (with suggested locks for gaps), recent changes and related decisions. Writes `docs/flows/<topic>.md`.
 - Re-running `stet study` refreshes the generated block and keeps your **How it works** and **Notes** sections.

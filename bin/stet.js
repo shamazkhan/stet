@@ -28,8 +28,10 @@ ${c.bold('Setup')}
   stet sync                           Regenerate AGENTS.md from .stet/
 
 ${c.bold('Before an AI task')}
-  stet scope set "<task>" --allow "src/x/**,tests/x/**" [--ticket LIN-142]
-                                      A ticket ID at the start of the task ("LIN-142 Add export") is picked up too
+  stet scope set "<task>" --allow "src/x/**,tests/x/**" [--ticket LIN-142] [--strict]
+                                      A ticket ID at the start of the task ("LIN-142 Add export") is picked up too.
+                                      Uncommitted earlier work is carried (ignored unless it changes); --strict refuses instead
+  stet scope carry <file,…> | --all   Mark files guard flagged as leftovers from before the scope
   stet scope [show|clear|ticket]
   stet context [--files "glob,glob"] [--changed] [--diff] [--copy|--stdout|--out file]
                                       Git-synced context pack for any AI chat (no more uploading src/)
@@ -37,6 +39,7 @@ ${c.bold('Before an AI task')}
 ${c.bold('After an AI task')}
   stet guard [--staged] [--base ref] [--warn]   Flag changes outside scope or in protected paths
   stet check [--only L1,L2]                      Run locked behaviours; non-zero exit if any broke
+  stet scope done [--commit] [--force]           Guard + check, then commit the task's files and close the scope
 
 ${c.bold('Understand the code')}
   stet study "<topic>" [--out file] [--max 12]   Map a flow: key files, routes, diagram, tests, what protects it
@@ -58,7 +61,7 @@ ${c.bold('Memory')}
   stet lock add "<behaviour>" --snapshot "<command that prints it>" [--mask "<regex>"]
                                       Locks the output itself (an export, a route list…); any change fails stet check
   stet lock approve L3 --why "<reason>"         Accept an intended output change (logged as a decision)
-  stet lock [list|rm L2]
+  stet lock [list|rm L2|rename L1 "<behaviour>"]   (add refuses a duplicate command; --force to override)
   stet decide "<decision>" [--why "<reason>"]   Append to the decision log
   stet decisions [--all]
 
@@ -89,10 +92,11 @@ async function main() {
     case 'decisions': res = core.decisions(r, { all: fl.all }); break;
     case 'lock': case 'locks':
       if (!sub || sub === 'list' || sub === 'ls') res = core.lockList(r);
-      else if (sub === 'add') res = core.lockAdd(r, rest.join(' '), { cmd: fl.cmd, protect: fl.protect, snapshot: fl.snapshot, mask: fl.mask });
+      else if (sub === 'add') res = core.lockAdd(r, rest.join(' '), { cmd: fl.cmd, protect: fl.protect, snapshot: fl.snapshot, mask: fl.mask, force: fl.force });
+      else if (sub === 'rename') res = core.lockRename(r, rest[0], rest.slice(1).join(' '));
       else if (sub === 'approve') res = core.lockApprove(r, rest[0], { why: fl.why });
       else if (sub === 'rm' || sub === 'remove') res = core.lockRm(r, rest[0]);
-      else throw new core.StetError('Usage: stet lock [list|add|rm|approve]');
+      else throw new core.StetError('Usage: stet lock [list|add|rm|rename|approve]');
       break;
     case 'check': res = core.check(r, { only: fl.only }); break;
     case 'scope':
@@ -111,12 +115,14 @@ async function main() {
             notes.push(`${c.green('✓')} Linear: ${issue.title}${issue.state ? c.dim(' · ' + issue.state.name) : ''}`);
           } catch (e) { notes.push(c.yellow(`! Linear: ${e.message.split('\n')[0]} (scope set anyway)`)); }
         }
-        res = core.scopeSet(r, task, { allow: fl.allow, ticket: fl.ticket });
+        res = core.scopeSet(r, task, { allow: fl.allow, ticket: fl.ticket, strict: fl.strict });
         if (notes.length) res.text += '\n' + notes.map((n) => '  ' + n).join('\n');
       }
       else if (sub === 'ticket') res = core.scopeTicket(r);
       else if (sub === 'clear') res = core.scopeClear(r);
-      else throw new core.StetError('Usage: stet scope [show|set|clear|ticket]');
+      else if (sub === 'carry') res = core.scopeCarry(r, rest.join(','), { all: fl.all });
+      else if (sub === 'done') res = core.scopeDone(r, { commit: fl.commit, force: fl.force });
+      else throw new core.StetError('Usage: stet scope [show|set|carry|done|clear|ticket]');
       break;
     case 'guard': res = core.guard(r, { staged: fl.staged, base: fl.base, warn: fl.warn }); break;
     case 'context': case 'ctx': {
