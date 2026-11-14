@@ -238,3 +238,70 @@ test('prepare-commit-msg hook adds the ticket ID once', () => {
   assert.match(stet(d, 'hook', 'uninstall').out, /Removed/);
   assert.doesNotMatch(fs.readFileSync(path.join(d, '.git/hooks/prepare-commit-msg'), 'utf8'), /stet/);
 });
+
+// ---- Linear (against a local fake Linear API) ----
+const http = require('http');
+function fakeLinear() {
+  const calls = [];
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      calls.push({ auth: req.headers.authorization, body });
+      res.setHeader('Content-Type', 'application/json');
+      if (req.headers.authorization !== 'lin_api_test') { res.statusCode = 401; return res.end('{}'); }
+      const id = JSON.parse(body).variables.id;
+      if (id !== 'LIN-142') return res.end(JSON.stringify({ data: { issue: null }, errors: [{ message: 'Entity not found' }] }));
+      res.end(JSON.stringify({ data: { issue: {
+        identifier: 'LIN-142', title: 'Add CSV export of invoices', url: 'https://linear.app/acme/issue/LIN-142',
+        description: 'Customers need to export invoices to CSV.\n\n- Include net, VAT and gross\n- Do not change VAT rounding',
+        priorityLabel: 'High', state: { name: 'In Progress' }, assignee: { name: 'Shamaz' }, project: null, labels: { nodes: [{ name: 'feature' }] },
+      } } }));
+    });
+  });
+  return new Promise((ok) => server.listen(0, '127.0.0.1', () => ok({ server, calls, url: `http://127.0.0.1:${server.address().port}/graphql` })));
+}
+function stetEnv(d, env, ...a) {
+  return new Promise((ok) => {
+    const p = cp.spawn(process.execPath, [BIN, ...a, '--no-color'], { cwd: d, env: { ...process.env, ...env } });
+    let out = ''; p.stdout.on('data', (b) => (out += b)); p.stderr.on('data', (b) => (out += b));
+    p.on('close', (code) => ok({ out, code }));
+  });
+}
+
+test('Linear: scope set LIN-142 fetches the ticket into context and PR', async () => {
+  const L = await fakeLinear();
+  try {
+    const { d } = repo();
+    stet(d, 'init');
+    const env = { LINEAR_API_KEY: 'lin_api_test', STET_LINEAR_URL: L.url };
+    let r = await stetEnv(d, env, 'scope', 'set', 'LIN-142', '--allow', 'src/export/**');
+    assert.strictEqual(r.code, 0, r.out);
+    assert.match(r.out, /LIN-142 Add CSV export of invoices/); assert.match(r.out, /Linear: Add CSV export of invoices · In Progress/);
+    assert.strictEqual(JSON.parse(fs.readFileSync(path.join(d, '.stet/scope.json'))).task, 'Add CSV export of invoices');
+    assert.ok(fs.existsSync(path.join(d, '.stet/.cache/tickets/LIN-142.json')));
+    assert.match(L.calls[0].body, /"id":"LIN-142"/); assert.doesNotMatch(L.calls[0].body, /login|module\.exports/); // only the ID is sent
+    r = await stetEnv(d, {}, 'context', '--stdout');
+    assert.match(r.out, /## Ticket LIN-142: Add CSV export of invoices/); assert.match(r.out, /Do not change VAT rounding/); assert.match(r.out, /Status: In Progress · Priority: High/);
+    r = await stetEnv(d, {}, 'pr', '--stdout');
+    assert.match(r.out, /\*\*Ticket:\*\* \[LIN-142\]\(https:\/\/linear\.app\/acme\/issue\/LIN-142\)/);
+    r = await stetEnv(d, env, 'ticket');
+    assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /LIN-142 Add CSV export of invoices/); assert.match(r.out, /included in stet context/);
+  } finally { L.server.close(); }
+});
+
+test('Linear: clear errors, and scope still works when Linear fails', async () => {
+  const L = await fakeLinear();
+  try {
+    const { d } = repo();
+    stet(d, 'init');
+    let r = await stetEnv(d, { LINEAR_API_KEY: 'lin_api_test', STET_LINEAR_URL: L.url }, 'ticket', 'LIN-999');
+    assert.strictEqual(r.code, 1); assert.match(r.out, /LIN-999: Entity not found/);
+    r = await stetEnv(d, { LINEAR_API_KEY: 'wrong', STET_LINEAR_URL: L.url }, 'ticket', 'LIN-142');
+    assert.strictEqual(r.code, 1); assert.match(r.out, /rejected the API key/);
+    r = await stetEnv(d, { LINEAR_API_KEY: '' }, 'ticket', 'LIN-142');
+    assert.strictEqual(r.code, 1); assert.match(r.out, /LINEAR_API_KEY is not set/);
+    r = await stetEnv(d, { LINEAR_API_KEY: 'wrong', STET_LINEAR_URL: L.url }, 'scope', 'set', 'LIN-142 Export', '--allow', 'src/**');
+    assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /Linear: .*\(scope set anyway\)/);
+  } finally { L.server.close(); }
+});

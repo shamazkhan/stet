@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 — 2026-11-14
+- Linear integration (optional, needs `LINEAR_API_KEY`): `stet ticket LIN-142` fetches a ticket; `stet scope set LIN-142 --allow …` uses the Linear title as the task.
+- The ticket (title, status, priority, labels, link, description) is included at the top of `stet context`, so one paste gives your AI the ticket and the code.
+- `stet pr` links the ticket ID to Linear.
+- Privacy: only the ticket ID is sent to Linear; tickets are cached in `.stet/.cache/` (gitignored).
+
 ## 0.2.0 — 2026-11-14
 - New `stet pr`: writes the commit message and PR description from facts — the diff since the scope was set, the ticket ID, scope result, `stet check` results and decisions logged during the task. `--check` runs the locks first, `--base main` compares against a branch.
 - Ticket IDs: `stet scope set "LIN-142 Add CSV export" …` (or `--ticket LIN-142`) stores the ticket. It appears in AGENTS.md, context packs, guard output and PR text.

@@ -5,7 +5,7 @@ const path = require('path');
 const core = require('../lib/core');
 const { c } = core;
 
-const BOOL = new Set(['help', 'h', 'version', 'v', 'staged', 'warn', 'diff', 'changed', 'stdout', 'copy', 'all', 'mcp', 'uninstall', 'check', 'json', 'no-color']);
+const BOOL = new Set(['help', 'h', 'version', 'v', 'staged', 'warn', 'diff', 'changed', 'stdout', 'copy', 'all', 'mcp', 'uninstall', 'check', 'json', 'no-color', 'cached']);
 function parse(argv) {
   const pos = [], fl = {};
   for (let i = 0; i < argv.length; i++) {
@@ -38,6 +38,10 @@ ${c.bold('After an AI task')}
   stet guard [--staged] [--base ref] [--warn]   Flag changes outside scope or in protected paths
   stet check [--only L1,L2]                      Run locked behaviours; non-zero exit if any broke
 
+${c.bold('Linear')}  (optional · needs LINEAR_API_KEY in your shell)
+  stet ticket LIN-142 [--stdout|--json]   Fetch a ticket; it goes into stet context and stet pr
+  stet scope set LIN-142 --allow "<globs>"  Uses the Linear title as the task
+
 ${c.bold('Shipping')}
   stet pr [--base main] [--check] [--stdout]
                                       Commit message + PR description from the diff, scope, checks and decisions
@@ -58,7 +62,7 @@ ${c.bold('Team')}
 
 Docs: https://stet-8fe08a58.base44.app`;
 
-function main() {
+async function main() {
   const { pos, fl } = parse(process.argv.slice(2));
   if (fl['no-color']) core.setColor(false);
   const [cmd, sub, ...rest] = pos;
@@ -83,7 +87,23 @@ function main() {
     case 'check': res = core.check(r, { only: fl.only }); break;
     case 'scope':
       if (!sub || sub === 'show') res = core.scopeShow(r);
-      else if (sub === 'set') res = core.scopeSet(r, rest.join(' '), { allow: fl.allow, ticket: fl.ticket });
+      else if (sub === 'set') {
+        let task = rest.join(' ');
+        const id = (typeof fl.ticket === 'string' ? fl.ticket : (task.match(/\b[A-Z][A-Z0-9]{1,9}-\d+\b/) || [])[0] || '').toUpperCase();
+        const notes = [];
+        // With LINEAR_API_KEY set, fetch the ticket so its title and description reach the context pack.
+        if (id && process.env.LINEAR_API_KEY) {
+          try {
+            const linear = require('../lib/linear');
+            const issue = await linear.fetchIssue(id);
+            linear.saveIssue(r, issue);
+            if (task.trim().toUpperCase() === id) task = `${id} ${issue.title}`; // "stet scope set LIN-142" → use the Linear title
+            notes.push(`${c.green('✓')} Linear: ${issue.title}${issue.state ? c.dim(' · ' + issue.state.name) : ''}`);
+          } catch (e) { notes.push(c.yellow(`! Linear: ${e.message.split('\n')[0]} (scope set anyway)`)); }
+        }
+        res = core.scopeSet(r, task, { allow: fl.allow, ticket: fl.ticket });
+        if (notes.length) res.text += '\n' + notes.map((n) => '  ' + n).join('\n');
+      }
       else if (sub === 'ticket') res = core.scopeTicket(r);
       else if (sub === 'clear') res = core.scopeClear(r);
       else throw new core.StetError('Usage: stet scope [show|set|clear|ticket]');
@@ -128,6 +148,25 @@ function main() {
       ].join('\n') };
       break;
     }
+    case 'ticket': {
+      const linear = require('../lib/linear');
+      r.need();
+      const id = (sub || r.scope.ticket || '').toUpperCase();
+      if (!id) throw new core.StetError('Usage: stet ticket LIN-142   (or set a scope with a ticket ID first)');
+      let issue = fl.cached ? linear.cachedIssue(r, id) : null;
+      if (!issue) { issue = await linear.fetchIssue(id); linear.saveIssue(r, issue); }
+      if (fl.stdout) { process.stdout.write(linear.issueMd(issue) + '\n'); return; }
+      const body = linear.issueMd(issue).split('\n');
+      res = { code: 0, text: [
+        `${c.green('✓')} ${c.violet(issue.identifier)} ${c.bold(issue.title)}`,
+        ...body.slice(1, 3).filter(Boolean).map((l) => '  ' + c.dim(l)),
+        '', ...body.slice(3).join('\n').trim().split('\n').slice(0, 12).map((l) => '  ' + l),
+      ].join('\n'), data: issue };
+      res.text += '\n' + [
+        '', c.dim(`  Saved for this repo. ${r.scope.ticket === issue.identifier ? 'It is included in stet context and stet pr.' : `Start work on it: stet scope set ${issue.identifier} --allow "<globs>"`}`),
+      ].join('\n');
+      break;
+    }
     case 'status': case 'st': res = core.status(r); break;
     case 'hook':
       if (sub === 'install') res = core.hook(r, { withCheck: fl.check });
@@ -144,7 +183,7 @@ function main() {
   process.exitCode = res.code;
 }
 
-try { main(); } catch (e) {
+main().catch((e) => {
   if (e instanceof core.StetError) { console.error(c.red('stet: ') + e.message); process.exitCode = e.code || 1; }
   else { console.error(e); process.exitCode = 2; }
-}
+});

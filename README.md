@@ -9,11 +9,13 @@ Stet is a small, free command-line tool that gives every AI coding tool (Claude 
 - **Scope guard.** Agree the task and the files it may touch. `stet guard` flags every file changed outside scope or in protected paths, even if the agent already committed it.
 - **Git-synced context.** `stet context` builds a context pack from the live repo (charter, scope, locks, decisions, commits, uncommitted changes, file tree and the files you choose). Paste it into any chat instead of uploading your `src` folder.
 - **Decision log.** `stet decide` records "we chose X because Y", so the next session doesn't reopen it.
+- **Linear tickets.** `stet scope set LIN-142 --allow "…"` pulls the ticket's title and description from Linear into the context pack, so your AI gets the ticket and the code in one paste.
 - **Ticket-aware PRs.** Put the ticket ID in the scope (`LIN-142 Add CSV export`) and `stet pr` writes the commit message and PR description from the real diff, scope, check results and decisions. The git hook adds the ticket ID to every commit.
 - **Handoff pack.** `stet handoff` writes an onboarding document for a new developer or CTO, built from the repo.
 - **MCP server.** `stet mcp` exposes all of this as tools to Claude Code, Cursor and any MCP client.
 
 No account. No telemetry. Your code never leaves your machine. Zero dependencies. Node 18+.
+The only network call is optional: if you set `LINEAR_API_KEY`, `stet ticket` fetches the Linear ticket you name (only the ticket ID is sent).
 
 ## Install
 
@@ -95,6 +97,7 @@ Checking 2 locked behaviours
 | `stet context [--files "<globs>"] [--changed] [--diff] [--copy\|--stdout\|--out f]` | Build the context pack. By default it writes `.stet/context.md` and copies it to the clipboard. |
 | `stet decide "<decision>" [--why "<reason>"]` | Add to the decision log. |
 | `stet decisions [--all]` | List decisions. |
+| `stet ticket [LIN-142] [--stdout] [--cached]` | Fetch a Linear ticket (needs `LINEAR_API_KEY`). It is included in `stet context` and linked in `stet pr`. With no ID, shows the current scope's ticket. |
 | `stet pr [--base main] [--check] [--stdout]` | Write `.stet/.cache/commit.txt` and `.stet/.cache/pr.md` from the diff since the scope was set: ticket, changed files, scope result, `stet check` results and decisions logged during the task. `--check` runs the locks first. |
 | `stet handoff [--out HANDOFF.md] [--stdout]` | Generate the onboarding pack. |
 | `stet hook install [--check]` | Add git hooks: pre-commit blocks commits that stage out-of-scope or protected files (`--check` also runs `stet check`); prepare-commit-msg adds the ticket ID to commit messages. |
@@ -102,6 +105,26 @@ Checking 2 locked behaviours
 | `stet mcp` / `stet mcp install` | Run the MCP server over stdio, or write `.mcp.json`. |
 
 Add `--json` to any command for machine-readable output.
+
+## Linear
+
+1. In Linear: **Settings → Security & access → Personal API keys → New key** (read access is enough).
+2. Put it in your shell, never in the repo:
+
+```bash
+echo 'export LINEAR_API_KEY=lin_api_...' >> ~/.zshrc && source ~/.zshrc
+```
+
+3. Work from tickets:
+
+```bash
+stet scope set LIN-142 --allow "src/export/**,tests/export/**"   # task = the Linear title
+stet context --files "src/export/**"   # ticket + rules + code, ready to paste into ChatGPT
+stet ticket                            # show the current ticket again (stet ticket LIN-150 for another)
+stet pr                                # PR text links back to the Linear ticket
+```
+
+Tickets are cached in `.stet/.cache/` (gitignored). Only the ticket ID is sent to Linear; nothing about your code is.
 
 ## Use with your AI tools
 
@@ -144,7 +167,7 @@ Globs support `*`, `**` and `?`. A bare folder name like `migrations` matches ev
 
 ## FAQ
 
-**Does Stet send my code anywhere?** No. It's a local CLI with no network calls and no telemetry.
+**Does Stet send my code anywhere?** No. It's a local CLI with no telemetry. Its only network call is the optional Linear fetch, which sends just the ticket ID you ask for.
 
 **Is this just AGENTS.md?** `AGENTS.md` tells the agent the rules. Stet keeps those rules current, and `guard` and `check` verify the agent actually followed them.
 
