@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.6.2 — 2026-11-15
+- Docs only: clearer npm description and keywords, README rewritten around "guardrails for AI coding agents", generic examples, more FAQ answers and links to the new guides at getstet.dev/guides. No code changes.
+
 ## 0.6.1 — 2026-11-15
 Fixes from early-tester feedback (thank you!).
 - **Carried files.** `stet scope set` now notices uncommitted work from an earlier task and carries it: guard ignores those files while they stay unchanged, and flags them clearly ("carried from earlier work, changed during this task") if the agent touches them again. Previously they were reported as out of scope.

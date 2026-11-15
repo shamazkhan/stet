@@ -1,8 +1,16 @@
-# stet
+# Stet: guardrails for AI coding agents
 
-**Stop AI coding agents from breaking what already works.**  ·  Docs: [getstet.dev/docs](https://getstet.dev/docs)
+[![npm](https://img.shields.io/npm/v/stet-cli)](https://www.npmjs.com/package/stet-cli) [![licence: MIT](https://img.shields.io/badge/licence-MIT-black)](LICENSE) [![node](https://img.shields.io/badge/node-%3E%3D18-black)](https://nodejs.org)
 
-Stet is a small, free command-line tool that gives every AI coding tool (Claude Code, Cursor, Codex, Copilot, Windsurf or a plain chat) the same rules, the same up-to-date picture of your repo, and a hard check before work is called done.
+**Stop AI coding agents from breaking what already works.**  ·  Website and docs: [getstet.dev](https://getstet.dev)  ·  [Guides](https://getstet.dev/guides/index.html)
+
+Stet is a free, open-source CLI and MCP server for teams using **Claude Code, Cursor, Codex, GitHub Copilot, Windsurf, Gemini CLI, ChatGPT or Claude**. You set the scope of each AI task, lock the behaviours that must keep working, and Stet blocks any change that goes outside the task or breaks a lock. It works the same with every tool, and the agent can read the rules but can't rewrite them.
+
+```bash
+npx stet-cli init      # in any git repo; Node 18+
+```
+
+**Use it when** your AI agent "tidies" files outside the task, breaks a feature you thought was safe, quietly edits a failing test, ignores your `AGENTS.md` / `CLAUDE.md` / Cursor rules, or forgets the project between chats.
 
 - **Charter → `AGENTS.md`.** Write your product context and do's and don'ts once in `.stet/charter.md`. Stet keeps `AGENTS.md` (read by Codex, Cursor, Copilot and others) and `CLAUDE.md` in sync.
 - **Locked behaviours.** Lock what already works, each with a command that proves it. `stet check` runs them all. If one fails, the AI fixes its change, not the test.
@@ -12,7 +20,7 @@ Stet is a small, free command-line tool that gives every AI coding tool (Claude 
 - **Decision log.** `stet decide` records "we chose X because Y", so the next session doesn't reopen it.
 - **Linear tickets.** `stet scope set LIN-142 --allow "…"` pulls the ticket's title and description from Linear into the context pack, so your AI gets the ticket and the code in one paste.
 - **Ticket-aware PRs.** Put the ticket ID in the scope (`LIN-142 Add CSV export`) and `stet pr` writes the commit message and PR description from the real diff, scope, check results and decisions. The git hook adds the ticket ID to every commit.
-- **Repo study.** `stet study "reconciliation"` maps how a part of the code works: key files, the files they depend on, entry points (routes), an import-flow diagram, the tests that cover it and what protects it. It writes `docs/flows/reconciliation.md`, keeps your own notes on refresh, and tells you when the code has changed since.
+- **Repo study.** `stet study "checkout"` maps how a part of the code works: key files, the files they depend on, entry points (routes), an import-flow diagram, the tests that cover it and what protects it. It writes `docs/flows/checkout.md`, keeps your own notes on refresh, and tells you when the code has changed since.
 - **Handoff pack.** `stet handoff` writes an onboarding document for a new developer or CTO, built from the repo.
 - **MCP server.** `stet mcp` exposes all of this as tools to Claude Code, Cursor and any MCP client.
 
@@ -46,11 +54,11 @@ Commit `.stet/`, `AGENTS.md` and `CLAUDE.md`. Every agent and teammate then work
 
 ```bash
 # once: lock what already works
-stet lock add "UAE VAT maths is correct" --cmd "node --test test/vat.test.js" --protect "src/vat/**"
+stet lock add "Login works" --cmd "node --test test/auth.test.js" --protect "src/auth/**"
 
 # before each AI task (the ticket ID is optional)
-stet scope set "LIN-142 Add CSV export of invoices" --allow "src/export/**,test/export*"
-stet context --files "src/invoices/**"     # copied to clipboard; paste into your chat
+stet scope set "LIN-142 Add CSV export" --allow "src/export/**,test/export*"
+stet context --files "src/export/**"     # copied to clipboard; paste into your chat
 
 # after the AI says it's done
 stet guard        # anything outside scope or in protected paths?
@@ -58,17 +66,17 @@ stet check        # do all locked behaviours still pass?
 
 # ship it
 stet pr                                   # commit message + PR description (PR copied to clipboard)
-git commit -F .stet/.cache/commit.txt     # "LIN-142: Add CSV export of invoices" + file list
+git commit -F .stet/.cache/commit.txt     # "LIN-142: Add CSV export" + file list
 ```
 
-Example (real output from a sample accounting app):
+Example output:
 
 ```
 $ stet guard
-Guarding 4 changed files (changes since 12b672b) · task: Add CSV export of invoices
+Guarding 4 changed files (changes since 12b672b) · task: Add CSV export
   ✗ migrations/002_export.sql  out of scope  protected
   ✓ src/export/csv.js
-  ✗ src/vat/vat.js  out of scope  affects L2
+  ✗ src/auth/session.js  out of scope  affects L2
   ✓ test/export.test.js
 
 ✗ 2 files outside scope or protected. Revert, or widen the scope on purpose.
@@ -76,10 +84,10 @@ Guarding 4 changed files (changes since 12b672b) · task: Add CSV export of invo
 
 $ stet check
 Checking 2 locked behaviours
-✗ L2   UAE VAT maths is correct (0.1s)
-     │ not ok 1 - 5% standard VAT, rounded to fils
-     │ expected: 10
-     │ actual: 9.99
+✗ L2   Login works (0.1s)
+     │ not ok 1 - session expires after 30 minutes
+     │ expected: 1800
+     │ actual: 0
 
 ✗ 1 locked behaviour broken: L2. Fix the change, not the check.
 ```
@@ -101,12 +109,12 @@ $ stet check
 ✗ L3   Export format is stable (0.2s, snapshot)
      │ output differs from the approved snapshot (- approved, + now):
      │ @@ line 1 @@
-     │ - id,net,vat
-     │ + id,vat,net
+     │ - id,name,email
+     │ + id,email,name
      │ intended? approve it: stet lock approve L3 --why "<reason>"
 ```
 
-- **Intended change?** `stet lock approve L3 --why "PRO-91: VAT before net"` saves the new output and logs a decision.
+- **Intended change?** `stet lock approve L3 --why "PRO-91: email column first"` saves the new output and logs a decision.
 - **Volatile output** (timestamps, generated IDs)? Add `--mask "<regex>"`; matches become `<masked>`.
 - **Tampering:** `stet guard` flags any snapshot file edited by hand instead of through `stet lock approve`, and AGENTS.md tells agents never to approve snapshots themselves.
 - Keep snapshot scripts deterministic: fixed sample data, sorted output, no network.
@@ -149,10 +157,10 @@ Add `--json` to any command for machine-readable output.
 Took over a codebase, or about to change a part you don't know well?
 
 ```bash
-stet study "reconciliation"
+stet study "checkout"
 ```
 
-Writes `docs/flows/reconciliation.md` from the code itself:
+Writes `docs/flows/checkout.md` from the code itself:
 
 - **Entry points:** routes that lead into it (Express, Fastify, FastAPI, Flask, NestJS, Django `path()`)
 - **Flow:** a Mermaid diagram of which file uses which (GitHub renders it)
@@ -163,7 +171,7 @@ Writes `docs/flows/reconciliation.md` from the code itself:
 Then get the explanation from your AI:
 
 ```bash
-stet context --flow reconciliation   # the flow doc + all its files, copied to your clipboard
+stet context --flow checkout   # the flow doc + all its files, copied to your clipboard
 ```
 
 The doc includes a ready prompt. Paste the answer into its **How it works** section: Stet keeps that section and your **Notes** when you refresh the doc. `stet study` on its own lists your flows and flags the ones whose code changed since they were written; `stet status` and `stet handoff` include them too.
@@ -212,7 +220,7 @@ MCP tools: `stet_context`, `stet_guard`, `stet_check`, `stet_scope` (read-only; 
 
 ```json
 {
-  "name": "Ledgerly",
+  "name": "my-app",
   "protect": ["migrations/**", ".github/**"],
   "ignore": ["fixtures/**"],
   "maxFileKB": 64,
@@ -235,7 +243,18 @@ Globs support `*`, `**` and `?`. A bare folder name like `migrations` matches ev
 
 **Is this just AGENTS.md?** `AGENTS.md` tells the agent the rules. Stet keeps those rules current, and `guard` and `check` verify the agent actually followed them.
 
+**How is it different from AI code review bots?** Review bots comment on a pull request after the fact. Stet checks the agreed scope and locked behaviours deterministically, before the change is committed, so review starts from a diff that is already in scope.
+
+**Does it work with ChatGPT or Claude in the browser?** Yes: `stet context` copies the rules, scope and code to paste in; then run `stet guard` and `stet check` on the result.
+
 **What if a locked behaviour has to change on purpose?** Change it deliberately: update the test, then `stet lock rm` / `stet lock add`, and record why with `stet decide`.
+
+## Guides
+
+- [How to stop AI coding agents from breaking working code](https://getstet.dev/guides/stop-ai-coding-agents-breaking-code.html)
+- [How to keep Claude Code, Cursor and Codex inside the task](https://getstet.dev/guides/keep-ai-agents-in-scope.html)
+- [AGENTS.md, CLAUDE.md and Cursor rules are not enforcement](https://getstet.dev/guides/rules-files-are-not-enforcement.html)
+- [Guardrails for AI coding: approaches compared](https://getstet.dev/guides/ai-coding-guardrails-compared.html)
 
 ## Licence
 
