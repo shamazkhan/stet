@@ -1,6 +1,6 @@
 {
   "name": "stet-cli",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "mcpName": "io.github.shamazkhan/stet",
   "description": "Guardrails for AI coding agents: stop Claude Code, Cursor, Codex, Copilot and ChatGPT from breaking working code. Scope guard, locked behaviours, AGENTS.md sync and an MCP server. Free, local, open source.",
   "bin": {
