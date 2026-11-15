@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.5 — 2026-11-15
+- **Update notice.** Once a day, when you run Stet in a terminal, it checks npm for a newer release. If there is one, it says so, links to the changelog and asks "Update now? [y/N]". Answer N and it won't ask again for that version (one short reminder a day at most). Silent in CI, in the MCP server, with `--json`, or with `STET_NO_UPDATE_CHECK=1` / `NO_UPDATE_NOTIFIER=1`. Sends nothing about your code or repo.
+- New `stet update [--yes]`: check now and install the latest release.
+- `stet status` shows your version and whether a newer one is out.
+- `stet init --mcp` now pins the MCP server to `stet-cli@latest`, so Claude Code and Cursor pick up new releases when they restart.
+
 ## 0.6.4 — 2026-11-15
 - New `stet badge`: prints a "guarded by stet" README badge; `stet badge --add` inserts it into your README (joins an existing badge row, never twice). `stet init --badge` does it during setup.
 - GitHub Action: [`shamazkhan/stet-action`](https://github.com/shamazkhan/stet-action) runs `stet guard` and `stet check` on every pull request against the merge base and writes the results to the job summary.

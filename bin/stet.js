@@ -5,7 +5,7 @@ const path = require('path');
 const core = require('../lib/core');
 const { c } = core;
 
-const BOOL = new Set(['help', 'h', 'version', 'v', 'staged', 'warn', 'diff', 'changed', 'stdout', 'copy', 'all', 'mcp', 'uninstall', 'check', 'json', 'no-color', 'cached']);
+const BOOL = new Set(['help', 'h', 'version', 'v', 'staged', 'warn', 'diff', 'changed', 'stdout', 'copy', 'all', 'mcp', 'uninstall', 'check', 'json', 'no-color', 'cached', 'no-update-check', 'yes']);
 function parse(argv) {
   const pos = [], fl = {};
   for (let i = 0; i < argv.length; i++) {
@@ -69,6 +69,7 @@ ${c.bold('Memory')}
 ${c.bold('Team')}
   stet handoff [--out HANDOFF.md]     Onboarding pack for a new dev or CTO, built from the repo
   stet hook install [--check] | stet hook uninstall
+  stet update [--yes]                 Check for a newer Stet and install it (asks first unless --yes)
   stet status
   stet mcp                            Run as an MCP server (Claude Code, Cursor, any MCP client)
   stet mcp install                    Write .mcp.json for this project
@@ -206,11 +207,19 @@ async function main() {
     case 'mcp':
       if (sub === 'install') res = core.mcpInstall(r); else throw new core.StetError('Usage: stet mcp | stet mcp install');
       break;
+    case 'update': case 'upgrade': {
+      const u = await require('../lib/update').update(core.VERSION, { c, yes: fl.yes });
+      if (u.text) console.log(u.text);
+      process.exitCode = u.code;
+      return;
+    }
     default: throw new core.StetError(`Unknown command "${cmd}". Run stet help.`);
   }
   if (fl.json) console.log(JSON.stringify({ code: res.code, data: res.data, text: res.text.replace(/\x1b\[[0-9;]*m/g, '') }, null, 2));
   else console.log(res.text);
   process.exitCode = res.code;
+  // Once a day at most: tell a person at a terminal about a newer release and offer to install it.
+  try { await require('../lib/update').notify(core.VERSION, { fl, c }); } catch {}
 }
 
 main().catch((e) => {

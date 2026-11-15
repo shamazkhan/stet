@@ -25,7 +25,7 @@ npx stet-cli init      # in any git repo; Node 18+
 - **MCP server.** `stet mcp` exposes all of this as tools to Claude Code, Cursor and any MCP client.
 
 No account. No telemetry. Your code never leaves your machine. Zero dependencies. Node 18+.
-The only network call is optional: if you set `LINEAR_API_KEY`, `stet ticket` fetches the Linear ticket you name (only the ticket ID is sent).
+Network calls are limited to two: once a day, when you run Stet in a terminal, it asks npm for the latest version number so it can offer an update (no code or repo information is sent; off in CI, or with `STET_NO_UPDATE_CHECK=1`). And if you set `LINEAR_API_KEY`, `stet ticket` fetches the Linear ticket you name (only the ticket ID is sent).
 
 ## Install
 
@@ -147,6 +147,7 @@ $ stet check
 | `stet context --flow <topic>` | Context pack with the flow doc and all its files. |
 | `stet handoff [--out HANDOFF.md] [--stdout]` | Generate the onboarding pack. |
 | `stet hook install [--check]` | Add git hooks: pre-commit blocks commits that stage out-of-scope or protected files (`--check` also runs `stet check`); prepare-commit-msg adds the ticket ID to commit messages. |
+| `stet update [--yes]` | Check for a newer release and install it (asks first unless `--yes`). |
 | `stet badge [--add]` | Print the "guarded by stet" README badge, or add it to your README. |
 | `stet status` | One-screen summary. |
 | `stet mcp` / `stet mcp install` | Run the MCP server over stdio, or write `.mcp.json`. |
@@ -201,12 +202,12 @@ Tickets are cached in `.stet/.cache/` (gitignored). Only the ticket ID is sent t
 
 ## Use with your AI tools
 
-**Claude Code:** run `stet init --mcp`, or `claude mcp add stet -- npx -y stet-cli mcp`. Claude Code reads `CLAUDE.md`, which imports `AGENTS.md`.
+**Claude Code:** run `stet init --mcp`, or `claude mcp add stet -- npx -y stet-cli@latest mcp`. Claude Code reads `CLAUDE.md`, which imports `AGENTS.md`.
 
 **Cursor:** add this to `.cursor/mcp.json`:
 
 ```json
-{ "mcpServers": { "stet": { "command": "npx", "args": ["-y", "stet-cli", "mcp"] } } }
+{ "mcpServers": { "stet": { "command": "npx", "args": ["-y", "stet-cli@latest", "mcp"] } } }
 ```
 
 **Codex, Copilot, Windsurf, Gemini CLI:** they read `AGENTS.md` directly.
@@ -265,7 +266,9 @@ stet badge --add      # or copy the markdown from: stet badge
 
 ## FAQ
 
-**Does Stet send my code anywhere?** No. It's a local CLI with no telemetry. Its only network call is the optional Linear fetch, which sends just the ticket ID you ask for.
+**Does Stet send my code anywhere?** No. It's a local CLI with no telemetry. It makes two kinds of network call: a once-a-day check of the latest version number on npm (terminal only; off in CI or with `STET_NO_UPDATE_CHECK=1`), and the optional Linear fetch, which sends just the ticket ID you ask for.
+
+**How do I stay up to date?** Stet tells you when a new release is out and asks whether to install it (`[y/N]`). Or run `stet update` any time. With npx, use `npx stet-cli@latest`. `stet init --mcp` pins the MCP server to `stet-cli@latest`, so Claude Code and Cursor pick up new releases on restart.
 
 **Is this just AGENTS.md?** `AGENTS.md` tells the agent the rules. Stet keeps those rules current, and `guard` and `check` verify the agent actually followed them.
 
