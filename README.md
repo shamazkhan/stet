@@ -1,6 +1,6 @@
 # Stet: guardrails for AI coding agents
 
-[![npm](https://img.shields.io/npm/v/stet-cli)](https://www.npmjs.com/package/stet-cli) [![licence: MIT](https://img.shields.io/badge/licence-MIT-black)](LICENSE) [![node](https://img.shields.io/badge/node-%3E%3D18-black)](https://nodejs.org)
+[![npm](https://img.shields.io/npm/v/stet-cli)](https://www.npmjs.com/package/stet-cli) [![licence: MIT](https://img.shields.io/badge/licence-MIT-black)](LICENSE) [![node](https://img.shields.io/badge/node-%3E%3D18-black)](https://nodejs.org) [![guarded by stet](https://img.shields.io/badge/guarded%20by-stet-FFF01F?labelColor=0E1116)](https://getstet.dev)
 
 **Stop AI coding agents from breaking what already works.**  ·  Website and docs: [getstet.dev](https://getstet.dev)  ·  [Guides](https://getstet.dev/guides/index.html)
 
@@ -147,6 +147,7 @@ $ stet check
 | `stet context --flow <topic>` | Context pack with the flow doc and all its files. |
 | `stet handoff [--out HANDOFF.md] [--stdout]` | Generate the onboarding pack. |
 | `stet hook install [--check]` | Add git hooks: pre-commit blocks commits that stage out-of-scope or protected files (`--check` also runs `stet check`); prepare-commit-msg adds the ticket ID to commit messages. |
+| `stet badge [--add]` | Print the "guarded by stet" README badge, or add it to your README. |
 | `stet status` | One-screen summary. |
 | `stet mcp` / `stet mcp install` | Run the MCP server over stdio, or write `.mcp.json`. |
 
@@ -230,12 +231,37 @@ MCP tools: `stet_context`, `stet_guard`, `stet_check`, `stet_scope` (read-only; 
 
 Globs support `*`, `**` and `?`. A bare folder name like `migrations` matches everything inside it.
 
-## In CI
+## In CI (GitHub Action)
+
+Fail pull requests where an agent strayed outside the task, touched protected paths or broke a lock:
 
 ```yaml
-- run: npx -y stet-cli guard --base origin/main --warn
-- run: npx -y stet-cli check
+# .github/workflows/stet.yml
+name: Stet
+on: [pull_request]
+jobs:
+  stet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm ci
+      - uses: shamazkhan/stet-action@v1
 ```
+
+Inputs, monorepo use and warn-only mode: [shamazkhan/stet-action](https://github.com/shamazkhan/stet-action). Any other CI: `npx -y stet-cli guard --base origin/main` and `npx -y stet-cli check`.
+
+## Badge
+
+Show contributors that AI changes here are guarded:
+
+```bash
+stet badge --add      # or copy the markdown from: stet badge
+```
+
+[![guarded by stet](https://img.shields.io/badge/guarded%20by-stet-FFF01F?labelColor=0E1116)](https://getstet.dev)
 
 ## FAQ
 

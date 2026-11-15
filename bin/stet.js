@@ -24,7 +24,8 @@ function parse(argv) {
 const HELP = `${c.bold('stet')} ${c.dim(core.VERSION)} — keep AI coding agents from breaking what already works
 
 ${c.bold('Setup')}
-  stet init [--name X] [--mcp]        Create .stet/, AGENTS.md and CLAUDE.md (detects your stack)
+  stet init [--name X] [--mcp] [--badge]   Create .stet/, AGENTS.md and CLAUDE.md (detects your stack)
+  stet badge [--add]                  README badge: "guarded by stet" (--add inserts it)
   stet sync                           Regenerate AGENTS.md from .stet/
 
 ${c.bold('Before an AI task')}
@@ -86,7 +87,8 @@ async function main() {
   const r = new core.Repo(root);
   let res;
   switch (cmd) {
-    case 'init': res = core.init(r, { name: fl.name, mcp: fl.mcp }); break;
+    case 'init': res = core.init(r, { name: fl.name, mcp: fl.mcp, badge: fl.badge }); break;
+    case 'badge': res = core.badge(r, { add: fl.add }); break;
     case 'sync': res = core.sync(r); break;
     case 'decide': res = core.decide(r, [sub, ...rest].filter(Boolean).join(' '), { why: fl.why }); break;
     case 'decisions': res = core.decisions(r, { all: fl.all }); break;

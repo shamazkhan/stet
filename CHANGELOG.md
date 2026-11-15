@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.4 — 2026-11-15
+- New `stet badge`: prints a "guarded by stet" README badge; `stet badge --add` inserts it into your README (joins an existing badge row, never twice). `stet init --badge` does it during setup.
+- GitHub Action: [`shamazkhan/stet-action`](https://github.com/shamazkhan/stet-action) runs `stet guard` and `stet check` on every pull request against the merge base and writes the results to the job summary.
+- AGENTS.md, PR descriptions, handoff packs and flow docs now link to getstet.dev.
+
 ## 0.6.2 — 2026-11-15
 - Docs only: clearer npm description and keywords, README rewritten around "guardrails for AI coding agents", generic examples, more FAQ answers and links to the new guides at getstet.dev/guides. No code changes.
 - Listed in the official MCP Registry as `io.github.shamazkhan/stet` (`server.json`, `mcpName` in package.json).
