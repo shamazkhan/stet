@@ -1,0 +1,28 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.shamazkhan/stet",
+  "title": "Stet",
+  "description": "Guardrails for AI coding agents: scope guard and locked behaviours for Claude Code, Cursor, Codex",
+  "websiteUrl": "https://getstet.dev",
+  "repository": {
+    "url": "https://github.com/shamazkhan/stet",
+    "source": "github"
+  },
+  "version": "0.6.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "stet-cli",
+      "version": "0.6.2",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}
