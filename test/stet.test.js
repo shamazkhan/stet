@@ -140,7 +140,7 @@ test('MCP server: initialize, list, call', async () => {
   const by = (id) => got.find((m) => m.id === id);
   assert.strictEqual(by(1).result.serverInfo.name, 'stet');
   assert.strictEqual(got.filter((m) => m.id === undefined).length, 0);
-  assert.deepStrictEqual(by(2).result.tools.map((t) => t.name), ['stet_context', 'stet_guard', 'stet_check', 'stet_scope', 'stet_pr', 'stet_study', 'stet_decide']);
+  assert.deepStrictEqual(by(2).result.tools.map((t) => t.name), ['stet_context', 'stet_guard', 'stet_check', 'stet_scope', 'stet_pr', 'stet_pr_lint', 'stet_study', 'stet_decide']);
   assert.match(by(3).result.content[0].text, /# Context pack/);
   assert.doesNotMatch(by(3).result.content[0].text, /\x1b\[/);
   assert.match(by(4).result.content[0].text, /Logged D-002/);
@@ -570,4 +570,102 @@ test('stet init --mcp pins the MCP server to the latest release', () => {
   const { d } = repo();
   stet(d, 'init', '--mcp');
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(d, '.mcp.json'), 'utf8')).mcpServers.stet.args, ['-y', 'stet-cli@latest', 'mcp']);
+});
+
+test('scope add widens an open scope without resetting it; remove narrows it', () => {
+  const { d, g } = repo();
+  stet(d, 'init');
+  fs.writeFileSync(path.join(d, 'src/auth/login.js'), 'earlier work\n'); // uncommitted before the scope: carried
+  stet(d, 'scope', 'set', 'CSV export', '--allow', 'src/export/**');
+  const before = JSON.parse(fs.readFileSync(path.join(d, '.stet/scope.json'), 'utf8'));
+  fs.writeFileSync(path.join(d, 'package.json'), '{"name":"demo2"}');
+  assert.strictEqual(stet(d, 'guard').code, 1);
+  let r = stet(d, 'scope', 'add', 'package.json');
+  assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /Added to scope: package\.json/);
+  const after = JSON.parse(fs.readFileSync(path.join(d, '.stet/scope.json'), 'utf8'));
+  assert.deepStrictEqual(after.allow, ['src/export/**', 'package.json']);
+  assert.strictEqual(after.base, before.base); assert.strictEqual(after.set, before.set); assert.deepStrictEqual(after.carried, before.carried);
+  r = stet(d, 'guard'); assert.strictEqual(r.code, 0, r.out);
+  assert.match(fs.readFileSync(path.join(d, 'AGENTS.md'), 'utf8'), /- `package\.json`/);
+  assert.match(stet(d, 'scope', 'add', 'package.json').out, /Already in scope/);
+  assert.match(stet(d, 'pr', '--stdout').out, /Scope widened during the task: `package\.json`/);
+  r = stet(d, 'scope', 'remove', 'package.json'); assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(stet(d, 'guard').code, 1);
+  assert.notStrictEqual(stet(d, 'scope', 'remove', 'src/export/**').code, 0); // can't empty it
+  assert.notStrictEqual(stet(d, 'scope', 'clear').code === 0 && stet(d, 'scope', 'add', 'x').code, 0); // no scope → error
+});
+
+function withRemote() {
+  const { d, g } = repo();
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'stet-remote-'));
+  cp.execFileSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
+  g('remote', 'add', 'origin', bare); g('push', '-q', '-u', 'origin', 'main');
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'stet-other-'));
+  cp.execFileSync('git', ['clone', '-q', bare, other]);
+  const o = (...a) => cp.execFileSync('git', a, { cwd: other });
+  o('config', 'user.email', 'o@o'); o('config', 'user.name', 'O');
+  const teammatePush = (file) => { o('pull', '-q', '--rebase', 'origin', 'main'); fs.writeFileSync(path.join(other, file), 'teammate\n'); o('add', '-A'); o('commit', '-qm', 'teammate ' + file); o('push', '-q', 'origin', 'main'); };
+  return { d, g, teammatePush };
+}
+
+test('remote base: fetch origin/main, warn when behind, PR compares with the up-to-date remote', () => {
+  const { d, g, teammatePush } = withRemote();
+  stet(d, 'init'); g('add', '-A'); g('commit', '-qm', 'stet'); g('push', '-q', 'origin', 'main');
+  teammatePush('teammate1.js');
+  let r = stet(d, 'scope', 'set', 'CSV export', '--allow', 'src/export/**');
+  assert.match(r.out, /Starting 1 commit behind origin\/main/);
+  g('pull', '-q', '--rebase', '--autostash', 'origin', 'main');
+  g('switch', '-q', '-c', 'feature');
+  stet(d, 'scope', 'set', 'CSV export', '--allow', 'src/export/**');
+  fs.writeFileSync(path.join(d, 'src/export/csv.js'), 'module.exports = 1;\n'); g('add', '-A'); g('commit', '-qm', 'csv');
+  teammatePush('teammate2.js');
+  fs.rmSync(path.join(d, '.stet/.cache/fetch.json'), { force: true });
+  r = stet(d, 'guard');
+  assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /This branch is 1 commit behind origin\/main/);
+  r = stet(d, 'pr', '--stdout');
+  assert.match(r.out, /Compared with `origin\/main`/);
+  assert.match(r.out, /\| `src\/export\/csv\.js` \| modified \|/);
+  assert.doesNotMatch(r.out, /teammate2/); // their work isn't counted as ours
+  // local main is stale: --base main uses origin/main instead
+  r = stet(d, 'guard', '--base', 'main');
+  assert.match(r.out, /Local main is 1 commit behind origin\/main\. Compared with origin\/main instead/);
+  assert.doesNotMatch(r.out, /teammate1/);
+  // --no-fetch and STET_NO_FETCH skip the network
+  assert.strictEqual(stet(d, 'guard', '--no-fetch').code, 0);
+});
+
+test('PR format: --what fills it, lint rejects missing, unwritten or hand-edited sections, custom template', () => {
+  const { d, g } = repo();
+  stet(d, 'init');
+  stet(d, 'scope', 'set', 'LIN-7 Add CSV export', '--allow', 'src/export/**');
+  fs.writeFileSync(path.join(d, 'src/export/csv.js'), 'module.exports = 1;\n');
+  const pr = path.join(d, '.stet/.cache/pr.md');
+  stet(d, 'pr');
+  let r = stet(d, 'pr', 'lint', pr);
+  assert.strictEqual(r.code, 1); assert.match(r.out, /"### What and why" is not written yet/);
+  r = stet(d, 'pr', '--what', 'Users can download their rows as CSV.');
+  assert.match(fs.readFileSync(pr, 'utf8'), /### What and why\nUsers can download their rows as CSV\.\n/);
+  r = stet(d, 'pr', 'lint', pr); assert.strictEqual(r.code, 0, r.out);
+  // an agent rewrites the scope section
+  const edited = fs.readFileSync(pr, 'utf8').replace(/✅ All changes are inside the agreed scope.*/, 'Looks fine to me.');
+  fs.writeFileSync(path.join(d, 'edited.md'), edited);
+  r = stet(d, 'pr', 'lint', 'edited.md'); assert.strictEqual(r.code, 1); assert.match(r.out, /"### Scope" was edited by hand/);
+  fs.writeFileSync(path.join(d, 'own.md'), '## My PR\n\nI changed some stuff.\n');
+  r = stet(d, 'pr', 'lint', 'own.md'); assert.strictEqual(r.code, 1);
+  assert.match(r.out, /Missing section: ### What and why/); assert.match(r.out, /Missing section: ### Locked behaviours/); assert.match(r.out, /footer was removed/);
+  // stdin
+  const p = cp.spawnSync(process.execPath, [BIN, 'pr', 'lint', '-', '--no-color'], { cwd: d, input: fs.readFileSync(pr), encoding: 'utf8' });
+  assert.strictEqual(p.status, 0, p.stdout + p.stderr);
+  // custom template
+  assert.strictEqual(stet(d, 'pr', 'template').code, 0);
+  const tp = path.join(d, '.stet/pr-template.md');
+  fs.writeFileSync(tp, fs.readFileSync(tp, 'utf8').replace('### What and why\n{{what}}\n', '### Summary\n{{what}}\n\n### How to test\n- [ ] Tested locally\n'));
+  stet(d, 'pr', '--what', 'CSV export.');
+  const out = fs.readFileSync(pr, 'utf8');
+  assert.match(out, /### Summary\nCSV export\.\n\n### How to test\n- \[ \] Tested locally/);
+  assert.strictEqual(stet(d, 'pr', 'lint', pr).code, 0);
+  r = stet(d, 'pr', 'lint', 'edited.md'); assert.match(r.out, /Missing section: ### Summary/);
+  // MCP: stet_pr takes what; stet_pr_lint checks a body
+  const mcp = require('../lib/mcp');
+  assert.ok(mcp.TOOLS.find((t) => t.name === 'stet_pr').inputSchema.properties.what);
 });

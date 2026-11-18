@@ -127,10 +127,11 @@ $ stet check
 | `stet sync` | Regenerate the Stet block in `AGENTS.md` (other commands do this automatically). |
 | `stet scope set "<task>" --allow "<globs>" [--ticket LIN-142]` | Agree the task and the files it may touch. Records the current commit as the base. A ticket ID at the start of the task is picked up automatically. |
 | `stet scope set … --strict` | Refuse to start a scope while there are uncommitted files. Without it, earlier uncommitted work is *carried*: guard ignores it unless it changes again. |
+| `stet scope add "<globs>"` / `stet scope remove "<globs>"` | Widen or narrow the open scope without resetting it (task, base and carried files are kept). |
 | `stet scope carry <file,…>` / `--all` | Mark files guard flagged as leftovers from before the scope. |
 | `stet scope done [--commit] [--force]` | Run guard and check, commit only the task's files (with the `stet pr` message) and close the scope. |
 | `stet scope [show\|clear\|ticket]` | Show or clear the scope, or print just the ticket ID. |
-| `stet guard [--staged] [--base ref] [--warn]` | Check changes since the scope base (committed, staged, unstaged and untracked). Exits 1 on violations unless `--warn`. |
+| `stet guard [--staged] [--base ref] [--warn] [--no-fetch]` | Check changes since the scope base (committed, staged, unstaged and untracked). Exits 1 on violations unless `--warn`. Warns when your branch is behind the up-to-date `origin/main`. |
 | `stet lock add "<behaviour>" --cmd "<cmd>" [--protect "<globs>"]` | Lock a behaviour. `--protect` tells guard which files affect it. A command that is already locked is refused (`--force` to add anyway). |
 | `stet lock rename L1 "<behaviour>"` | Rename a lock, e.g. the test-suite lock `stet init` creates. |
 | `stet lock add "<behaviour>" --snapshot "<cmd>" [--mask "<regex>"]` | Lock a command's output as an approved snapshot in `.stet/snapshots/`. |
@@ -141,7 +142,10 @@ $ stet check
 | `stet decide "<decision>" [--why "<reason>"]` | Add to the decision log. |
 | `stet decisions [--all]` | List decisions. |
 | `stet ticket [LIN-142] [--stdout] [--cached]` | Fetch a Linear ticket (needs `LINEAR_API_KEY`). It is included in `stet context` and linked in `stet pr`. With no ID, shows the current scope's ticket. |
-| `stet pr [--base main] [--check] [--stdout]` | Write `.stet/.cache/commit.txt` and `.stet/.cache/pr.md` from the diff since the scope was set: ticket, changed files, scope result, `stet check` results and decisions logged during the task. `--check` runs the locks first. |
+| `stet pr [--what "…"] [--base main] [--check] [--stdout]` | Write `.stet/.cache/commit.txt` and `.stet/.cache/pr.md`: ticket, changed files, scope result, `stet check` results and decisions logged during the task. `--what` fills in "What and why", the only part you write. Compares with the up-to-date `origin/main` by default. `--check` runs the locks first. |
+| `stet pr --create --what "…" [--draft]` | Push the branch and open the PR with the GitHub CLI, in this repo's format. |
+| `stet pr lint <file\|->` | Fail a PR description that doesn't follow the format: missing sections, unwritten "What and why", hand-edited facts. Use it in CI. |
+| `stet pr template` | Write `.stet/pr-template.md` to set your own PR sections. |
 | `stet study "<topic>" [--out file] [--max 12]` | Map a flow: key and supporting files, routes, Mermaid diagram, tests, protection gaps. Writes `docs/flows/<topic>.md`. |
 | `stet study` | List studied flows and which are out of date. |
 | `stet context --flow <topic>` | Context pack with the flow doc and all its files. |

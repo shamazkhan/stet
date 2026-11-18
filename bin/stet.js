@@ -5,7 +5,7 @@ const path = require('path');
 const core = require('../lib/core');
 const { c } = core;
 
-const BOOL = new Set(['help', 'h', 'version', 'v', 'staged', 'warn', 'diff', 'changed', 'stdout', 'copy', 'all', 'mcp', 'uninstall', 'check', 'json', 'no-color', 'cached', 'no-update-check', 'yes']);
+const BOOL = new Set(['help', 'h', 'version', 'v', 'staged', 'warn', 'diff', 'changed', 'stdout', 'copy', 'all', 'mcp', 'uninstall', 'check', 'json', 'no-color', 'cached', 'no-update-check', 'yes', 'create', 'draft', 'no-fetch']);
 function parse(argv) {
   const pos = [], fl = {};
   for (let i = 0; i < argv.length; i++) {
@@ -32,6 +32,7 @@ ${c.bold('Before an AI task')}
   stet scope set "<task>" --allow "src/x/**,tests/x/**" [--ticket LIN-142] [--strict]
                                       A ticket ID at the start of the task ("LIN-142 Add export") is picked up too.
                                       Uncommitted earlier work is carried (ignored unless it changes); --strict refuses instead
+  stet scope add "<glob,glob>"        Widen the open scope without resetting it (stet scope remove narrows it)
   stet scope carry <file,…> | --all   Mark files guard flagged as leftovers from before the scope
   stet scope [show|clear|ticket]
   stet context [--files "glob,glob"] [--changed] [--diff] [--copy|--stdout|--out file]
@@ -39,6 +40,7 @@ ${c.bold('Before an AI task')}
 
 ${c.bold('After an AI task')}
   stet guard [--staged] [--base ref] [--warn]   Flag changes outside scope or in protected paths
+                                      Warns when the branch is behind origin/main (fetched; --no-fetch to skip)
   stet check [--only L1,L2]                      Run locked behaviours; non-zero exit if any broke
   stet scope done [--commit] [--force]           Guard + check, then commit the task's files and close the scope
 
@@ -53,9 +55,13 @@ ${c.bold('Linear')}  (optional · needs LINEAR_API_KEY in your shell)
   stet scope set LIN-142 --allow "<globs>"  Uses the Linear title as the task
 
 ${c.bold('Shipping')}
-  stet pr [--base main] [--check] [--stdout]
+  stet pr [--what "<why>"] [--base main] [--check] [--stdout]
                                       Commit message + PR description from the diff, scope, checks and decisions
+                                      Compares with the up-to-date origin/main by default
                                       Then: git commit -F .stet/.cache/commit.txt
+  stet pr --create --what "<why>" [--draft]   Push and open the PR with gh, in this repo's format
+  stet pr lint <file|->               Fail a PR description that doesn't follow the format (for CI)
+  stet pr template                    Write .stet/pr-template.md to customise the format
 
 ${c.bold('Memory')}
   stet lock add "<behaviour>" --cmd "<proof command>" [--protect "glob,glob"]
@@ -123,11 +129,13 @@ async function main() {
       }
       else if (sub === 'ticket') res = core.scopeTicket(r);
       else if (sub === 'clear') res = core.scopeClear(r);
+      else if (sub === 'add' || sub === 'allow') res = core.scopeAdd(r, [...rest, typeof fl.allow === 'string' ? fl.allow : ''].join(','));
+      else if (sub === 'remove' || sub === 'rm') res = core.scopeRemove(r, rest.join(','));
       else if (sub === 'carry') res = core.scopeCarry(r, rest.join(','), { all: fl.all });
       else if (sub === 'done') res = core.scopeDone(r, { commit: fl.commit, force: fl.force });
-      else throw new core.StetError('Usage: stet scope [show|set|carry|done|clear|ticket]');
+      else throw new core.StetError('Usage: stet scope [show|set|add|remove|carry|done|clear|ticket]');
       break;
-    case 'guard': res = core.guard(r, { staged: fl.staged, base: fl.base, warn: fl.warn }); break;
+    case 'guard': res = core.guard(r, { staged: fl.staged, base: fl.base, warn: fl.warn, noFetch: fl['no-fetch'] }); break;
     case 'context': case 'ctx': {
       core.setColor(false);
       const ctx = core.context(r, { files: fl.files, changed: fl.changed, diff: fl.diff, maxKB: fl['max-kb'], flow: fl.flow });
@@ -149,13 +157,24 @@ async function main() {
       break;
     }
     case 'pr': {
+      if (sub === 'lint' || sub === 'check') {
+        const src = rest[0] || fl.file;
+        if (!src) throw new core.StetError('Usage: stet pr lint <file>   or: gh pr view --json body -q .body | stet pr lint -');
+        const body = src === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(path.resolve(src), 'utf8');
+        res = core.prLint(r, body); break;
+      }
+      if (sub === 'template') { res = core.prTemplateInit(r); break; }
+      if (sub) throw new core.StetError('Usage: stet pr [--what "…"] [--base main] [--check] [--stdout] [--create [--draft]] | stet pr lint <file|-> | stet pr template');
+      const what = typeof fl.what === 'string' ? fl.what : undefined;
+      if (fl.create) { res = core.prCreate(r, { what, base: fl.base, draft: fl.draft, noFetch: fl['no-fetch'] }); break; }
       core.setColor(false);
-      const p = core.pr(r, { base: fl.base, runCheck: fl.check });
+      const p = core.pr(r, { base: fl.base, runCheck: fl.check, what, noFetch: fl['no-fetch'] });
       core.setColor((process.stdout.isTTY || process.env.STET_COLOR === '1') && !process.env.NO_COLOR && !fl['no-color']);
       if (fl.stdout) { process.stdout.write(p.text); return; }
       const copied = core.copyToClipboard(p.data.pr);
       const warn = [];
       if (p.data.violations.length) warn.push(c.yellow(`! ${p.data.violations.length} file(s) outside scope or protected — listed in the PR text.`));
+      for (const w of p.data.warnings) warn.push(c.yellow(w));
       if (!p.data.checks) warn.push(c.yellow('! stet check has not been run for this change. Run it, or use stet pr --check.'));
       else if (p.data.checks.some((x) => !x.ok)) warn.push(c.red('✗ A locked behaviour is failing — listed in the PR text.'));
       res = { code: 0, text: [
@@ -163,8 +182,9 @@ async function main() {
         `  commit message  .stet/.cache/commit.txt   →  ${c.cyan('git commit -F .stet/.cache/commit.txt')}`,
         `  PR description  .stet/.cache/pr.md        →  ${copied ? 'copied to clipboard' : 'open the file, or run: stet pr --stdout'}`,
         ...warn.map((w) => '  ' + w),
-        c.dim('  Fill in the "What and why" line (or paste the PR text into your AI and ask it to write it).'),
-      ].join('\n') };
+        p.data.whatFilled ? c.dim(`  Open it: stet pr --create --what "…"   (or gh pr create --body-file .stet/.cache/pr.md)`) : c.dim('  Add the "What and why": stet pr --what "<1–2 sentences>"   (stet pr lint rejects a PR without it)'),
+        p.data.against ? c.dim(`  Compared with ${p.data.against} (${p.data.base.slice(0, 7)}).`) : '',
+      ].filter(Boolean).join('\n') };
       break;
     }
     case 'ticket': {

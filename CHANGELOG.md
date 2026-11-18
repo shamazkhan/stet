@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0 — 2026-11-18
+From tester feedback.
+- **`stet scope add "<globs>"`** widens the open scope without resetting it: the task, base commit and carried files stay as they are. `stet scope remove` narrows it. Both show in `stet scope show`, and the PR text notes when the scope changed during the task.
+- **Up-to-date remote base.** Stet now fetches the base branch (`origin/main` by default, or `baseBranch` in `.stet/config.json`) at most once a minute with a 10-second timeout. `stet scope set` and `stet guard` warn when your branch is behind it. `stet pr` compares with the merge base on the up-to-date remote by default, so the file list matches what the PR will show, and `--base main` uses `origin/main` when your local `main` is behind. Skip the network with `--no-fetch`, `STET_NO_FETCH=1` or `"fetch": false` in config. The pre-commit hook never fetches.
+- **One PR format.** `stet pr --what "<1–2 sentences>"` fills in the only part a person or agent writes; everything else (changes, scope, locks, decisions) comes from git and Stet. `stet pr lint <file|->` fails a PR description with missing or reordered sections, an unwritten "What and why", a removed footer or hand-edited fact sections. `stet pr --create --what "…" [--draft]` pushes the branch and opens the PR with the GitHub CLI in that format. `stet pr template` writes `.stet/pr-template.md` so a team can set its own sections.
+- AGENTS.md now tells agents to use `stet pr` and never write their own PR description. MCP: `stet_pr` takes `what`; new `stet_pr_lint` tool.
+
 ## 0.6.5 — 2026-11-15
 - **Update notice.** Once a day, when you run Stet in a terminal, it checks npm for a newer release. If there is one, it says so, links to the changelog and asks "Update now? [y/N]". Answer N and it won't ask again for that version (one short reminder a day at most). Silent in CI, in the MCP server, with `--json`, or with `STET_NO_UPDATE_CHECK=1` / `NO_UPDATE_NOTIFIER=1`. Sends nothing about your code or repo.
 - New `stet update [--yes]`: check now and install the latest release.
