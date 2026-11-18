@@ -146,6 +146,7 @@ $ stet check
 | `stet pr --create --what "…" [--draft]` | Push the branch and open the PR with the GitHub CLI, in this repo's format. |
 | `stet pr lint <file\|->` | Fail a PR description that doesn't follow the format: missing sections, unwritten "What and why", hand-edited facts. Use it in CI. |
 | `stet pr template` | Write `.stet/pr-template.md` to set your own PR sections. |
+| `stet ci [--no-pr-format] [--force]` | Write `.github/workflows/stet.yml` so guard, check and the PR format check run on every pull request. `stet init --ci` does it during setup. |
 | `stet study "<topic>" [--out file] [--max 12]` | Map a flow: key and supporting files, routes, Mermaid diagram, tests, protection gaps. Writes `docs/flows/<topic>.md`. |
 | `stet study` | List studied flows and which are out of date. |
 | `stet context --flow <topic>` | Context pack with the flow doc and all its files. |

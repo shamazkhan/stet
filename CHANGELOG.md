@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.7.1 — 2026-11-18
+- **`stet ci`** (or `stet init --ci`) writes `.github/workflows/stet.yml`: the Stet GitHub Action runs `stet guard`, `stet check` and the PR format check on every pull request, re-checking when the description is edited. It installs your dependencies first (npm, yarn, pnpm or pip, detected from your lockfile). `--no-pr-format` leaves the format check out; it never overwrites an existing workflow without `--force`.
+
 ## 0.7.0 — 2026-11-18
 From tester feedback.
 - **`stet scope add "<globs>"`** widens the open scope without resetting it: the task, base commit and carried files stay as they are. `stet scope remove` narrows it. Both show in `stet scope show`, and the PR text notes when the scope changed during the task.

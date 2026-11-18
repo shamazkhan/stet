@@ -669,3 +669,22 @@ test('PR format: --what fills it, lint rejects missing, unwritten or hand-edited
   const mcp = require('../lib/mcp');
   assert.ok(mcp.TOOLS.find((t) => t.name === 'stet_pr').inputSchema.properties.what);
 });
+
+test('stet ci writes a pull request workflow with the PR format check; init --ci too', () => {
+  const { d } = repo();
+  fs.writeFileSync(path.join(d, 'package-lock.json'), '{}');
+  stet(d, 'init');
+  let r = stet(d, 'ci');
+  assert.strictEqual(r.code, 0, r.out);
+  const f = path.join(d, '.github/workflows/stet.yml');
+  let y = fs.readFileSync(f, 'utf8');
+  for (const re of [/types: \[opened, edited, synchronize, reopened\]/, /- run: npm ci/, /uses: shamazkhan\/stet-action@v1/, /pr-format: true/, /fetch-depth: 0/]) assert.match(y, re);
+  assert.match(stet(d, 'ci').out, /already exists/);
+  r = stet(d, 'ci', '--force', '--no-pr-format');
+  y = fs.readFileSync(f, 'utf8');
+  assert.doesNotMatch(y, /pr-format/); assert.doesNotMatch(y, /edited/);
+  const { d: d2 } = repo();
+  r = stet(d2, 'init', '--ci');
+  assert.match(r.out, /Wrote .*\.github\/workflows\/stet\.yml/);
+  assert.ok(fs.existsSync(path.join(d2, '.github/workflows/stet.yml')));
+});
