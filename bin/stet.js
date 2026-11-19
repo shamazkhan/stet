@@ -5,7 +5,7 @@ const path = require('path');
 const core = require('../lib/core');
 const { c } = core;
 
-const BOOL = new Set(['help', 'h', 'version', 'v', 'staged', 'warn', 'diff', 'changed', 'stdout', 'copy', 'all', 'mcp', 'uninstall', 'check', 'json', 'no-color', 'cached', 'no-update-check', 'yes', 'create', 'draft', 'no-fetch', 'ci', 'no-pr-format']);
+const BOOL = new Set(['help', 'h', 'version', 'v', 'staged', 'warn', 'diff', 'changed', 'stdout', 'copy', 'all', 'mcp', 'uninstall', 'check', 'json', 'no-color', 'cached', 'no-update-check', 'yes', 'create', 'draft', 'no-fetch', 'ci', 'no-pr-format', 'agent']);
 function parse(argv) {
   const pos = [], fl = {};
   for (let i = 0; i < argv.length; i++) {
@@ -24,7 +24,8 @@ function parse(argv) {
 const HELP = `${c.bold('stet')} ${c.dim(core.VERSION)} — keep AI coding agents from breaking what already works
 
 ${c.bold('Setup')}
-  stet init [--name X] [--mcp] [--badge] [--ci]   Create .stet/, AGENTS.md and CLAUDE.md (detects your stack)
+  stet init [--name X] [--mcp] [--badge] [--ci] [--agent]   Create .stet/, AGENTS.md and CLAUDE.md (detects your stack)
+  stet agent [--uninstall]            Claude Code hook: block PRs that don't follow this repo's PR format
   stet ci [--no-pr-format] [--force]  Write .github/workflows/stet.yml: guard, check and PR format on every PR
   stet badge [--add]                  README badge: "guarded by stet" (--add inserts it)
   stet sync                           Regenerate AGENTS.md from .stet/
@@ -90,12 +91,24 @@ async function main() {
   if (fl.version || fl.v) return console.log(core.VERSION);
   if (!cmd || cmd === 'help' || fl.help || fl.h) return console.log(HELP);
   if (cmd === 'mcp' && !sub) return require('../lib/mcp').serve();
+  if (cmd === 'agent-hook') {
+    // Called by Claude Code with the tool call on stdin. Exit 2 blocks it; anything unexpected lets it through.
+    try {
+      const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+      core.setColor(false);
+      const h = core.agentHook(new core.Repo(core.findRoot(input.cwd || process.cwd())), input);
+      if (h.code) process.stderr.write(h.text + '\n');
+      process.exitCode = h.code;
+    } catch { process.exitCode = 0; }
+    return;
+  }
 
   const root = core.findRoot(process.cwd());
   const r = new core.Repo(root);
   let res;
   switch (cmd) {
-    case 'init': res = core.init(r, { name: fl.name, mcp: fl.mcp, badge: fl.badge, ci: fl.ci ? (fl['no-pr-format'] ? 'no-pr-format' : true) : false }); break;
+    case 'init': res = core.init(r, { name: fl.name, mcp: fl.mcp, badge: fl.badge, ci: fl.ci ? (fl['no-pr-format'] ? 'no-pr-format' : true) : false, agent: fl.agent }); break;
+    case 'agent': res = core.agentInstall(r, { uninstall: fl.uninstall || sub === 'uninstall' }); break;
     case 'ci': res = core.ciWorkflow(r, { force: fl.force, prFormat: !fl['no-pr-format'] }); break;
     case 'badge': res = core.badge(r, { add: fl.add }); break;
     case 'sync': res = core.sync(r); break;

@@ -688,3 +688,63 @@ test('stet ci writes a pull request workflow with the PR format check; init --ci
   assert.match(r.out, /Wrote .*\.github\/workflows\/stet\.yml/);
   assert.ok(fs.existsSync(path.join(d2, '.github/workflows/stet.yml')));
 });
+
+test('agent hook: blocks Claude Code PRs in their own format, lets the stet format through', () => {
+  const { d } = repo();
+  stet(d, 'init');
+  fs.mkdirSync(path.join(d, '.claude'));
+  fs.writeFileSync(path.join(d, '.claude/settings.json'), JSON.stringify({ permissions: { allow: ['Bash(npm test)'] } }));
+  let r = stet(d, 'agent');
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /Agent hook installed/);
+  stet(d, 'agent'); // twice: still one entry
+  let j = JSON.parse(fs.readFileSync(path.join(d, '.claude/settings.json'), 'utf8'));
+  assert.deepStrictEqual(j.permissions, { allow: ['Bash(npm test)'] });
+  assert.strictEqual(j.hooks.PreToolUse.length, 1);
+  assert.match(j.hooks.PreToolUse[0].matcher, /Bash/);
+  assert.match(j.hooks.PreToolUse[0].hooks[0].command, /agent-hook/);
+  assert.match(stet(d, 'status').out, /agent hook on/);
+
+  stet(d, 'scope', 'set', 'Add CSV export', '--allow', 'src/export/**');
+  fs.writeFileSync(path.join(d, 'src/export/csv.js'), 'module.exports = 1;\n');
+  const hook = (input) => { const p = cp.spawnSync(process.execPath, [BIN, 'agent-hook'], { cwd: d, input: JSON.stringify({ cwd: d, ...input }), encoding: 'utf8' }); return { code: p.status, err: p.stderr }; };
+  const bash = (command) => hook({ tool_name: 'Bash', tool_input: { command } });
+
+  // not a PR command
+  assert.strictEqual(bash('npm test && git push').code, 0);
+  // Claude's usual heredoc form, in its own format
+  r = bash(`git push -u origin HEAD && gh pr create --title "Add CSV export" --body "$(cat <<'EOF'\n## Summary\n- Added "CSV" export\n\n## Test plan\n- [x] npm test\nEOF\n)"`);
+  assert.strictEqual(r.code, 2); assert.match(r.err, /blocked/); assert.match(r.err, /Missing section: ### What and why/); assert.match(r.err, /stet pr --create --what/);
+  // --fill, no body, --web, stdin, a body built at run time
+  for (const cmd of ['gh pr create --fill', 'gh pr create --title x', 'gh pr create --web', 'gh pr create -t x -F -', 'gh pr create -t x --body "$BODY"']) assert.strictEqual(bash(cmd).code, 2, cmd);
+  // gh pr edit without a body change is fine; with an own body it is blocked
+  assert.strictEqual(bash('gh pr edit 12 --add-label bug').code, 0);
+  assert.strictEqual(bash("gh pr edit 12 --body 'quick fix'").code, 2);
+  // the stet format passes
+  stet(d, 'pr', '--what', 'Users can download their rows as CSV.');
+  assert.strictEqual(bash('gh pr create --title "Add CSV export" --body-file .stet/.cache/pr.md').code, 0);
+  const body = fs.readFileSync(path.join(d, '.stet/.cache/pr.md'), 'utf8');
+  assert.strictEqual(bash(`gh pr create --title t --body "$(cat <<'EOF'\n${body}\nEOF\n)"`).code, 0);
+  // a hand-edited fact section is caught
+  assert.strictEqual(bash(`gh pr create -t t --body-file=edited.md`).code, 2);
+  fs.writeFileSync(path.join(d, 'edited.md'), body.replace(/✅ All changes are inside the agreed scope.*/, 'Fine.'));
+  r = bash('gh pr create -t t --body-file=edited.md'); assert.strictEqual(r.code, 2); assert.match(r.err, /"### Scope" was edited by hand/);
+  // GitHub MCP tools
+  assert.strictEqual(hook({ tool_name: 'mcp__github__create_pull_request', tool_input: { title: 't', body: 'my words' } }).code, 2);
+  assert.strictEqual(hook({ tool_name: 'mcp__github__create_pull_request', tool_input: { title: 't', body } }).code, 0);
+  assert.strictEqual(hook({ tool_name: 'mcp__github__update_pull_request', tool_input: { title: 'new title' } }).code, 0);
+  // bad input or a repo without Stet never blocks
+  assert.strictEqual(cp.spawnSync(process.execPath, [BIN, 'agent-hook'], { cwd: d, input: 'not json' }).status, 0);
+  const { d: plain } = repo();
+  assert.strictEqual(cp.spawnSync(process.execPath, [BIN, 'agent-hook'], { cwd: plain, input: JSON.stringify({ cwd: plain, tool_name: 'Bash', tool_input: { command: 'gh pr create --fill' } }) }).status, 0);
+  // guard ignores the settings file; uninstall keeps the user's settings
+  assert.doesNotMatch(stet(d, 'guard').out, /settings\.json/);
+  assert.match(stet(d, 'agent', '--uninstall').out, /Removed/);
+  j = JSON.parse(fs.readFileSync(path.join(d, '.claude/settings.json'), 'utf8'));
+  assert.deepStrictEqual(j, { permissions: { allow: ['Bash(npm test)'] } });
+  // AGENTS.md says it too; init --agent installs it
+  assert.match(fs.readFileSync(path.join(d, 'AGENTS.md'), 'utf8'), /never run `gh pr create`/);
+  const { d: d2 } = repo();
+  assert.match(stet(d2, 'init', '--agent').out, /Agent hook installed/);
+  assert.ok(core.agentInstalled(new core.Repo(d2)));
+});

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2 — 2026-11-19
+From tester feedback: agents overlooked the PR template and wrote their own descriptions.
+- **`stet agent`** (or `stet init --agent`) installs a Claude Code hook in `.claude/settings.json`. Before Claude runs `gh pr create`, `gh pr edit --body…` or a GitHub MCP pull-request tool, Stet runs `stet pr lint` on the description. One that doesn't follow the repo's PR format is blocked, and Claude is told exactly what to run instead (`stet pr --create --what "…"`). It reads Claude's usual `--body "$(cat <<'EOF' … EOF)"` form and `--body-file`; `--fill`, `--web`, stdin and bodies built at run time are blocked because the format can't be checked. Editing a PR's title or labels is never blocked.
+- The hook fails open: outside a Stet repo, or if anything goes wrong, it lets the command through. `stet agent --uninstall` removes it and keeps your other Claude Code settings.
+- `stet status` shows whether the agent hook is on. AGENTS.md now also tells agents never to run `gh pr create` with a description they wrote. Guard ignores `.claude/settings.json`.
+
 ## 0.7.1 — 2026-11-18
 - **`stet ci`** (or `stet init --ci`) writes `.github/workflows/stet.yml`: the Stet GitHub Action runs `stet guard`, `stet check` and the PR format check on every pull request, re-checking when the description is edited. It installs your dependencies first (npm, yarn, pnpm or pip, detected from your lockfile). `--no-pr-format` leaves the format check out; it never overwrites an existing workflow without `--force`.
 

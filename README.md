@@ -146,6 +146,7 @@ $ stet check
 | `stet pr --create --what "…" [--draft]` | Push the branch and open the PR with the GitHub CLI, in this repo's format. |
 | `stet pr lint <file\|->` | Fail a PR description that doesn't follow the format: missing sections, unwritten "What and why", hand-edited facts. Use it in CI. |
 | `stet pr template` | Write `.stet/pr-template.md` to set your own PR sections. |
+| `stet agent [--uninstall]` | Claude Code hook in `.claude/settings.json`: before Claude opens or edits a PR (`gh pr create`, `gh pr edit --body`, GitHub MCP tools), Stet lints the description and blocks one that doesn't follow the format, telling Claude to use `stet pr --create`. `stet init --agent` does it during setup. |
 | `stet ci [--no-pr-format] [--force]` | Write `.github/workflows/stet.yml` so guard, check and the PR format check run on every pull request. `stet init --ci` does it during setup. |
 | `stet study "<topic>" [--out file] [--max 12]` | Map a flow: key and supporting files, routes, Mermaid diagram, tests, protection gaps. Writes `docs/flows/<topic>.md`. |
 | `stet study` | List studied flows and which are out of date. |
@@ -207,7 +208,7 @@ Tickets are cached in `.stet/.cache/` (gitignored). Only the ticket ID is sent t
 
 ## Use with your AI tools
 
-**Claude Code:** run `stet init --mcp`, or `claude mcp add stet -- npx -y stet-cli@latest mcp`. Claude Code reads `CLAUDE.md`, which imports `AGENTS.md`.
+**Claude Code:** run `stet init --mcp --agent`, or `claude mcp add stet -- npx -y stet-cli@latest mcp`. Claude Code reads `CLAUDE.md`, which imports `AGENTS.md`. `--agent` (or `stet agent`) adds a hook so Claude can't open a PR in its own format: it is blocked and told to run `stet pr --create`.
 
 **Cursor:** add this to `.cursor/mcp.json`:
 
@@ -219,7 +220,7 @@ Tickets are cached in `.stet/.cache/` (gitignored). Only the ticket ID is sent t
 
 **ChatGPT, Claude.ai, Gemini (chat):** run `stet context --files "<what you're working on>"` and paste the result.
 
-MCP tools: `stet_context`, `stet_guard`, `stet_check`, `stet_scope` (read-only; only the human sets scope), `stet_pr`, `stet_study` and `stet_decide`.
+MCP tools: `stet_context`, `stet_guard`, `stet_check`, `stet_scope` (read-only; only the human sets scope), `stet_pr`, `stet_pr_lint`, `stet_study` and `stet_decide`.
 
 ## Configuration
 
