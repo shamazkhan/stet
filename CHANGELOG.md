@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.3 — 2026-11-22
+From tester feedback.
+- **TypeScript compiles, locked for you.** `stet init` now also locks a type check for each TypeScript project it finds (`npm run typecheck` if you have that script, else `npx tsc --noEmit`), so a type error that would only crash at runtime fails `stet check` instead. Already set up? `stet lock suggest` lists what you could lock; `--add` locks it.
+- **Guard ignores generated files**: `*.tsbuildinfo`, `*.db`/`*.sqlite`, logs, `.DS_Store`, `__pycache__/`, `.next/`, `dist/`, `build/`, `coverage/` and similar, plus your own `ignore` globs. It shows how many it skipped. Protected paths are always checked; `"guardGenerated": true` checks everything.
+- **Out of scope on purpose?** When guard (or the pre-commit hook) blocks out-of-scope files, it now prints the exact `stet scope add "<folders>"` command that would allow them.
+- **Opt-in anonymous usage count.** `stet init` asks once (terminal only, default No). If you say yes, at most once a day Stet sends a random install ID, its version, the command name and your OS, nothing else. `stet telemetry on|off` changes it; `STET_TELEMETRY=0`, `DO_NOT_TRACK=1` and CI always turn it off.
+
 ## 0.7.2 — 2026-11-19
 From tester feedback: agents overlooked the PR template and wrote their own descriptions.
 - **`stet agent`** (or `stet init --agent`) installs a Claude Code hook in `.claude/settings.json`. Before Claude runs `gh pr create`, `gh pr edit --body…` or a GitHub MCP pull-request tool, Stet runs `stet pr lint` on the description. One that doesn't follow the repo's PR format is blocked, and Claude is told exactly what to run instead (`stet pr --create --what "…"`). It reads Claude's usual `--body "$(cat <<'EOF' … EOF)"` form and `--body-file`; `--fill`, `--web`, stdin and bodies built at run time are blocked because the format can't be checked. Editing a PR's title or labels is never blocked.

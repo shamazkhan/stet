@@ -5,7 +5,7 @@ const path = require('path');
 const core = require('../lib/core');
 const { c } = core;
 
-const BOOL = new Set(['help', 'h', 'version', 'v', 'staged', 'warn', 'diff', 'changed', 'stdout', 'copy', 'all', 'mcp', 'uninstall', 'check', 'json', 'no-color', 'cached', 'no-update-check', 'yes', 'create', 'draft', 'no-fetch', 'ci', 'no-pr-format', 'agent']);
+const BOOL = new Set(['help', 'h', 'version', 'v', 'staged', 'warn', 'diff', 'changed', 'stdout', 'copy', 'all', 'mcp', 'uninstall', 'check', 'json', 'no-color', 'cached', 'no-update-check', 'yes', 'create', 'draft', 'no-fetch', 'ci', 'no-pr-format', 'agent', 'add']);
 function parse(argv) {
   const pos = [], fl = {};
   for (let i = 0; i < argv.length; i++) {
@@ -70,6 +70,7 @@ ${c.bold('Memory')}
   stet lock add "<behaviour>" --snapshot "<command that prints it>" [--mask "<regex>"]
                                       Locks the output itself (an export, a route list…); any change fails stet check
   stet lock approve L3 --why "<reason>"         Accept an intended output change (logged as a decision)
+  stet lock suggest [--add]           Lock what Stet finds: test suites and "TypeScript compiles"
   stet lock [list|rm L2|rename L1 "<behaviour>"]   (add refuses a duplicate command; --force to override)
   stet decide "<decision>" [--why "<reason>"]   Append to the decision log
   stet decisions [--all]
@@ -79,6 +80,7 @@ ${c.bold('Team')}
   stet hook install [--check] | stet hook uninstall
   stet update [--yes]                 Check for a newer Stet and install it (asks first unless --yes)
   stet status
+  stet telemetry [on|off]             Opt-in anonymous usage count (off by default; never sends code)
   stet mcp                            Run as an MCP server (Claude Code, Cursor, any MCP client)
   stet mcp install                    Write .mcp.json for this project
 
@@ -90,7 +92,7 @@ async function main() {
   const [cmd, sub, ...rest] = pos;
   if (fl.version || fl.v) return console.log(core.VERSION);
   if (!cmd || cmd === 'help' || fl.help || fl.h) return console.log(HELP);
-  if (cmd === 'mcp' && !sub) return require('../lib/mcp').serve();
+  if (cmd === 'mcp' && !sub) { require('../lib/usage').ping('mcp', core.VERSION); return require('../lib/mcp').serve(); }
   if (cmd === 'agent-hook') {
     // Called by Claude Code with the tool call on stdin. Exit 2 blocks it; anything unexpected lets it through.
     try {
@@ -117,10 +119,11 @@ async function main() {
     case 'lock': case 'locks':
       if (!sub || sub === 'list' || sub === 'ls') res = core.lockList(r);
       else if (sub === 'add') res = core.lockAdd(r, rest.join(' '), { cmd: fl.cmd, protect: fl.protect, snapshot: fl.snapshot, mask: fl.mask, force: fl.force });
+      else if (sub === 'suggest') res = core.lockSuggest(r, { add: fl.add });
       else if (sub === 'rename') res = core.lockRename(r, rest[0], rest.slice(1).join(' '));
       else if (sub === 'approve') res = core.lockApprove(r, rest[0], { why: fl.why });
       else if (sub === 'rm' || sub === 'remove') res = core.lockRm(r, rest[0]);
-      else throw new core.StetError('Usage: stet lock [list|add|rm|rename|approve]');
+      else throw new core.StetError('Usage: stet lock [list|add|suggest|rm|rename|approve]');
       break;
     case 'check': res = core.check(r, { only: fl.only }); break;
     case 'scope':
@@ -242,6 +245,13 @@ async function main() {
     case 'mcp':
       if (sub === 'install') res = core.mcpInstall(r); else throw new core.StetError('Usage: stet mcp | stet mcp install');
       break;
+    case 'telemetry': case 'usage': {
+      const usage = require('../lib/usage');
+      if (sub === 'on' || sub === 'off') usage.set(sub === 'on');
+      else if (sub) throw new core.StetError('Usage: stet telemetry [on|off]');
+      res = { code: 0, text: usage.status(c, core.VERSION) };
+      break;
+    }
     case 'update': case 'upgrade': {
       const u = await require('../lib/update').update(core.VERSION, { c, yes: fl.yes });
       if (u.text) console.log(u.text);
@@ -253,6 +263,8 @@ async function main() {
   if (fl.json) console.log(JSON.stringify({ code: res.code, data: res.data, text: res.text.replace(/\x1b\[[0-9;]*m/g, '') }, null, 2));
   else console.log(res.text);
   process.exitCode = res.code;
+  if (cmd === 'init' && !fl.json) { try { await require('../lib/usage').askOnce(c); } catch {} }
+  if (cmd !== 'telemetry' && cmd !== 'usage') { try { await require('../lib/usage').ping(cmd, core.VERSION); } catch {} }
   // Once a day at most: tell a person at a terminal about a newer release and offer to install it.
   try { await require('../lib/update').notify(core.VERSION, { fl, c }); } catch {}
 }

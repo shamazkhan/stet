@@ -748,3 +748,90 @@ test('agent hook: blocks Claude Code PRs in their own format, lets the stet form
   assert.match(stet(d2, 'init', '--agent').out, /Agent hook installed/);
   assert.ok(core.agentInstalled(new core.Repo(d2)));
 });
+
+test('0.7.3: TypeScript compiles is locked; lock suggest; guard skips generated files and suggests scope add', () => {
+  const { d, g } = repo();
+  fs.mkdirSync(path.join(d, 'apps/web/src/lib'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'apps/web/package.json'), JSON.stringify({ name: 'web', devDependencies: { typescript: '5' } }));
+  fs.writeFileSync(path.join(d, 'apps/web/tsconfig.json'), '{}');
+  fs.writeFileSync(path.join(d, 'apps/web/src/lib/api.ts'), 'export const a = 1;\n');
+  g('add', '-A'); g('commit', '-qm', 'web');
+  let r = stet(d, 'init');
+  assert.match(r.out, /locked: +L\d TypeScript compiles \(apps\/web\/\) \(cd apps\/web && npx tsc --noEmit\)/);
+  assert.match(stet(d, 'lock', 'suggest').out, /already locked/);
+  // an older setup without it
+  const L = JSON.parse(fs.readFileSync(path.join(d, '.stet/locks.json'), 'utf8')).filter((l) => !/TypeScript/.test(l.name));
+  fs.writeFileSync(path.join(d, '.stet/locks.json'), JSON.stringify(L));
+  r = stet(d, 'lock', 'suggest');
+  assert.match(r.out, /stet lock add "TypeScript compiles \(apps\/web\/\)" --cmd "cd apps\/web && npx tsc --noEmit"/);
+  r = stet(d, 'lock', 'suggest', '--add'); assert.match(r.out, /Locked L\d+: TypeScript compiles/);
+  assert.match(stet(d, 'lock', 'suggest').out, /already locked/);
+  // guard: generated files skipped, out-of-scope ones get a scope add hint
+  stet(d, 'scope', 'set', 'Rounding', '--allow', 'src/export/**');
+  fs.writeFileSync(path.join(d, 'src/export/csv.js'), 'x\n');
+  fs.writeFileSync(path.join(d, 'apps/web/tsconfig.tsbuildinfo'), '{}');
+  fs.mkdirSync(path.join(d, 'backend'));
+  fs.writeFileSync(path.join(d, 'backend/test_app.db'), 'x');
+  fs.writeFileSync(path.join(d, 'apps/web/src/lib/api.ts'), 'export const a = 2;\n');
+  fs.writeFileSync(path.join(d, 'apps/web/src/lib/constants.ts'), 'export const b = 2;\n');
+  r = stet(d, 'guard');
+  assert.strictEqual(r.code, 1);
+  assert.doesNotMatch(r.out, /✓ apps\/web\/tsconfig\.tsbuildinfo/);
+  assert.match(r.out, /2 generated or ignored files not checked: (apps\/web\/tsconfig\.tsbuildinfo · backend\/test_app\.db|backend\/test_app\.db · apps\/web\/tsconfig\.tsbuildinfo)/);
+  assert.match(r.out, /If that was on purpose: stet scope add "apps\/web\/src\/lib\/\*\*"/);
+  // protected paths are always checked; guardGenerated checks everything
+  const cfgP = path.join(d, '.stet/config.json');
+  const cfg = JSON.parse(fs.readFileSync(cfgP, 'utf8'));
+  fs.writeFileSync(cfgP, JSON.stringify({ ...cfg, protect: ['backend/**'] }));
+  assert.match(stet(d, 'guard').out, /backend\/test_app\.db.*protected/);
+  fs.writeFileSync(cfgP, JSON.stringify({ ...cfg, guardGenerated: true }));
+  assert.match(stet(d, 'guard').out, /apps\/web\/tsconfig\.tsbuildinfo/);
+  stet(d, 'scope', 'add', 'apps/web/src/lib/**');
+  fs.writeFileSync(cfgP, JSON.stringify(cfg));
+  assert.strictEqual(stet(d, 'guard').code, 0);
+});
+
+test('0.7.3: usage count is opt-in, sends only id/version/command/os once a day, and is off in CI', async () => {
+  const http = require('http');
+  const got = [];
+  const srv = http.createServer((req, res) => { let b = ''; req.on('data', (x) => { b += x; }); req.on('end', () => { got.push({ h: req.headers, body: JSON.parse(b) }); res.end('{}'); }); });
+  await new Promise((ok) => srv.listen(0, ok));
+  const cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stet-cfg-'));
+  const env = { ...process.env, STET_CONFIG_DIR: cfgDir, STET_USAGE_URL: `http://127.0.0.1:${srv.address().port}/ping`, CI: '', GITHUB_ACTIONS: '', CONTINUOUS_INTEGRATION: '', STET_TELEMETRY: '', DO_NOT_TRACK: '', STET_NO_UPDATE_CHECK: '1' };
+  delete env.CI; delete env.GITHUB_ACTIONS; delete env.CONTINUOUS_INTEGRATION;
+  const run = (d, ...a) => new Promise((ok) => { const p = cp.spawn(process.execPath, [BIN, ...a, '--no-color'], { cwd: d, env }); let o = ''; p.stdout.on('data', (x) => { o += x; }); p.on('close', () => ok(o)); });
+  const { d } = repo();
+  await run(d, 'init');            // not a terminal: no question, nothing sent
+  await run(d, 'status');
+  assert.strictEqual(got.length, 0);
+  assert.match(await run(d, 'telemetry'), /usage count: off/);
+  assert.match(await run(d, 'telemetry', 'on'), /usage count: on/);
+  await run(d, 'status');
+  await run(d, 'guard');           // same day: no second ping
+  assert.strictEqual(got.length, 1);
+  assert.deepStrictEqual(Object.keys(got[0].body).sort(), ['command', 'install_id', 'os', 'version']);
+  assert.strictEqual(got[0].body.command, 'status');
+  assert.strictEqual(got[0].body.version, core.VERSION);
+  assert.match(got[0].body.install_id, /^[0-9a-f-]{36}$/);
+  assert.doesNotMatch(JSON.stringify(got[0]), new RegExp(path.basename(d)));
+  // a day later, but in CI or with STET_TELEMETRY=0: nothing
+  const f = path.join(cfgDir, 'usage.json');
+  const u = JSON.parse(fs.readFileSync(f, 'utf8')); u.lastPing = 0; fs.writeFileSync(f, JSON.stringify(u));
+  env.CI = 'true'; await run(d, 'status'); delete env.CI;
+  env.STET_TELEMETRY = '0'; await run(d, 'status'); env.STET_TELEMETRY = '';
+  assert.strictEqual(got.length, 1);
+  await run(d, 'status');
+  assert.strictEqual(got.length, 2);
+  assert.match(await run(d, 'telemetry', 'off'), /usage count: off/);
+  u.lastPing = 0; fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), lastPing: 0 }));
+  await run(d, 'status');
+  assert.strictEqual(got.length, 2);
+  // the question, answered no, sends nothing and is not asked again
+  const usage = require('../lib/usage');
+  process.env.STET_CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'stet-cfg-'));
+  assert.ok(usage.undecided());
+  usage.set(false);
+  assert.strictEqual(await usage.askOnce(core.c, { interactive: true }), null);
+  delete process.env.STET_CONFIG_DIR;
+  srv.close();
+});

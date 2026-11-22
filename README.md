@@ -24,7 +24,7 @@ npx stet-cli init      # in any git repo; Node 18+
 - **Handoff pack.** `stet handoff` writes an onboarding document for a new developer or CTO, built from the repo.
 - **MCP server.** `stet mcp` exposes all of this as tools to Claude Code, Cursor and any MCP client.
 
-No account. No telemetry. Your code never leaves your machine. Zero dependencies. Node 18+.
+No account. Usage counting is opt-in and off by default. Your code never leaves your machine. Zero dependencies. Node 18+.
 Network calls are limited to two: once a day, when you run Stet in a terminal, it asks npm for the latest version number so it can offer an update (no code or repo information is sent; off in CI, or with `STET_NO_UPDATE_CHECK=1`). And if you set `LINEAR_API_KEY`, `stet ticket` fetches the Linear ticket you name (only the ticket ID is sent).
 
 ## Install
@@ -133,6 +133,7 @@ $ stet check
 | `stet scope [show\|clear\|ticket]` | Show or clear the scope, or print just the ticket ID. |
 | `stet guard [--staged] [--base ref] [--warn] [--no-fetch]` | Check changes since the scope base (committed, staged, unstaged and untracked). Exits 1 on violations unless `--warn`. Warns when your branch is behind the up-to-date `origin/main`. |
 | `stet lock add "<behaviour>" --cmd "<cmd>" [--protect "<globs>"]` | Lock a behaviour. `--protect` tells guard which files affect it. A command that is already locked is refused (`--force` to add anyway). |
+| `stet lock suggest [--add]` | List what Stet can lock from your stack (each test suite, and "TypeScript compiles" for each TypeScript project) that isn't locked yet; `--add` locks them. `stet init` locks them automatically. |
 | `stet lock rename L1 "<behaviour>"` | Rename a lock, e.g. the test-suite lock `stet init` creates. |
 | `stet lock add "<behaviour>" --snapshot "<cmd>" [--mask "<regex>"]` | Lock a command's output as an approved snapshot in `.stet/snapshots/`. |
 | `stet lock approve L3 --why "<reason>"` | Accept a changed snapshot on purpose; logged as a decision. |
@@ -238,6 +239,8 @@ MCP tools: `stet_context`, `stet_guard`, `stet_check`, `stet_scope` (read-only; 
 
 Globs support `*`, `**` and `?`. A bare folder name like `migrations` matches everything inside it.
 
+Guard skips build output and local data, so it only shows real code changes: `*.tsbuildinfo`, `*.db`/`*.sqlite`, `*.log`, `.DS_Store`, `__pycache__/`, `.next/`, `dist/`, `build/`, `coverage/` and similar, plus your own `ignore` globs. A file in `protect` is always checked. Set `"guardGenerated": true` to check generated files too.
+
 ## In CI (GitHub Action)
 
 Fail pull requests where an agent strayed outside the task, touched protected paths or broke a lock:
@@ -272,7 +275,9 @@ stet badge --add      # or copy the markdown from: stet badge
 
 ## FAQ
 
-**Does Stet send my code anywhere?** No. It's a local CLI with no telemetry. It makes two kinds of network call: a once-a-day check of the latest version number on npm (terminal only; off in CI or with `STET_NO_UPDATE_CHECK=1`), and the optional Linear fetch, which sends just the ticket ID you ask for.
+**Does Stet send my code anywhere?** No. It's a local CLI. It makes at most three kinds of network call: a once-a-day check of the latest version number on npm (terminal only; off in CI or with `STET_NO_UPDATE_CHECK=1`), the optional Linear fetch, which sends just the ticket ID you ask for, and, only if you say yes, an anonymous usage count.
+
+**What does the usage count send?** Nothing unless you opt in: `stet init` asks once, and `stet telemetry on|off` changes it. When it's on, at most once a day Stet sends a random install ID, the Stet version, the command name and your OS. Never code, file names, paths, repo names or git data. It is always off in CI and with `STET_TELEMETRY=0` or `DO_NOT_TRACK=1`. `stet telemetry` shows exactly what it sends.
 
 **How do I stay up to date?** Stet tells you when a new release is out and asks whether to install it (`[y/N]`). Or run `stet update` any time. With npx, use `npx stet-cli@latest`. `stet init --mcp` pins the MCP server to `stet-cli@latest`, so Claude Code and Cursor pick up new releases on restart.
 
