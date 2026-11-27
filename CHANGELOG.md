@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.7.4 — 2026-11-27
+- The anonymous usage question is now asked once to people who set up Stet before 0.7.3, on their next successful command at a terminal (not only on `stet init`). Default is still No. It is never asked inside a git hook, in CI, with `--json`, or by agents and the MCP server, and never again once answered. `stet telemetry on|off` changes the answer.
+
 ## 0.7.3 — 2026-11-22
 From tester feedback.
 - **TypeScript compiles, locked for you.** `stet init` now also locks a type check for each TypeScript project it finds (`npm run typecheck` if you have that script, else `npx tsc --noEmit`), so a type error that would only crash at runtime fails `stet check` instead. Already set up? `stet lock suggest` lists what you could lock; `--add` locks it.

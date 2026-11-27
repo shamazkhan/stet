@@ -277,7 +277,7 @@ stet badge --add      # or copy the markdown from: stet badge
 
 **Does Stet send my code anywhere?** No. It's a local CLI. It makes at most three kinds of network call: a once-a-day check of the latest version number on npm (terminal only; off in CI or with `STET_NO_UPDATE_CHECK=1`), the optional Linear fetch, which sends just the ticket ID you ask for, and, only if you say yes, an anonymous usage count.
 
-**What does the usage count send?** Nothing unless you opt in: `stet init` asks once, and `stet telemetry on|off` changes it. When it's on, at most once a day Stet sends a random install ID, the Stet version, the command name and your OS. Never code, file names, paths, repo names or git data. It is always off in CI and with `STET_TELEMETRY=0` or `DO_NOT_TRACK=1`. `stet telemetry` shows exactly what it sends.
+**What does the usage count send?** Nothing unless you opt in: Stet asks once (on `stet init`, or on your next command at a terminal if you set up Stet earlier), and `stet telemetry on|off` changes it. When it's on, at most once a day Stet sends a random install ID, the Stet version, the command name and your OS. Never code, file names, paths, repo names or git data. It is always off in CI and with `STET_TELEMETRY=0` or `DO_NOT_TRACK=1`. `stet telemetry` shows exactly what it sends.
 
 **How do I stay up to date?** Stet tells you when a new release is out and asks whether to install it (`[y/N]`). Or run `stet update` any time. With npx, use `npx stet-cli@latest`. `stet init --mcp` pins the MCP server to `stet-cli@latest`, so Claude Code and Cursor pick up new releases on restart.
 

@@ -263,7 +263,11 @@ async function main() {
   if (fl.json) console.log(JSON.stringify({ code: res.code, data: res.data, text: res.text.replace(/\x1b\[[0-9;]*m/g, '') }, null, 2));
   else console.log(res.text);
   process.exitCode = res.code;
-  if (cmd === 'init' && !fl.json) { try { await require('../lib/usage').askOnce(c); } catch {} }
+  // Ask about the anonymous usage count once: on init, or on the next successful command at a terminal for
+  // anyone who set up Stet before this question existed. Never inside a git hook, in CI or for --json.
+  const inGitHook = !!(process.env.GIT_INDEX_FILE || process.env.GIT_EXEC_PATH && process.env.GIT_DIR) || fl.staged;
+  const askable = !fl.json && !inGitHook && (cmd === 'init' || (res.code === 0 && !['telemetry', 'usage', 'help', 'version', 'update', 'upgrade', 'hook'].includes(cmd)));
+  if (askable) { try { await require('../lib/usage').askOnce(c); } catch {} }
   if (cmd !== 'telemetry' && cmd !== 'usage') { try { await require('../lib/usage').ping(cmd, core.VERSION); } catch {} }
   // Once a day at most: tell a person at a terminal about a newer release and offer to install it.
   try { await require('../lib/update').notify(core.VERSION, { fl, c }); } catch {}
