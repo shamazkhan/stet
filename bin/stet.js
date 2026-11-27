@@ -5,7 +5,7 @@ const path = require('path');
 const core = require('../lib/core');
 const { c } = core;
 
-const BOOL = new Set(['help', 'h', 'version', 'v', 'staged', 'warn', 'diff', 'changed', 'stdout', 'copy', 'all', 'mcp', 'uninstall', 'check', 'json', 'no-color', 'cached', 'no-update-check', 'yes', 'create', 'draft', 'no-fetch', 'ci', 'no-pr-format', 'agent', 'add']);
+const BOOL = new Set(['help', 'h', 'version', 'v', 'staged', 'warn', 'diff', 'changed', 'stdout', 'copy', 'all', 'mcp', 'uninstall', 'check', 'json', 'no-color', 'cached', 'no-update-check', 'yes', 'create', 'draft', 'no-fetch', 'ci', 'no-pr-format', 'pr-format', 'agent', 'add', 'force', 'strict', 'include-current', 'no-baseline']);
 function parse(argv) {
   const pos = [], fl = {};
   for (let i = 0; i < argv.length; i++) {
@@ -26,14 +26,16 @@ const HELP = `${c.bold('stet')} ${c.dim(core.VERSION)} — keep AI coding agents
 ${c.bold('Setup')}
   stet init [--name X] [--mcp] [--badge] [--ci] [--agent]   Create .stet/, AGENTS.md and CLAUDE.md (detects your stack)
   stet agent [--uninstall]            Claude Code hook: block PRs that don't follow this repo's PR format
-  stet ci [--no-pr-format] [--force]  Write .github/workflows/stet.yml: guard, check and PR format on every PR
+  stet ci [--pr-format] [--force]     Write .github/workflows/stet.yml: guard and check on every PR (--pr-format also checks PR text)
   stet badge [--add]                  README badge: "guarded by stet" (--add inserts it)
   stet sync                           Regenerate AGENTS.md from .stet/
 
 ${c.bold('Before an AI task')}
-  stet scope set "<task>" --allow "src/x/**,tests/x/**" [--ticket LIN-142] [--strict]
+  stet scope set "<task>" --allow "src/x/**,tests/x/**" [--ticket LIN-142] [--strict|--include-current]
                                       A ticket ID at the start of the task ("LIN-142 Add export") is picked up too.
-                                      Uncommitted earlier work is carried (ignored unless it changes); --strict refuses instead
+                                      Uncommitted earlier work is carried (ignored unless it changes);
+                                      --include-current counts it as part of this task; --strict refuses
+                                      The scope belongs to this branch: on other branches only protected paths apply
   stet scope add "<glob,glob>"        Widen the open scope without resetting it (stet scope remove narrows it)
   stet scope carry <file,…> | --all   Mark files guard flagged as leftovers from before the scope
   stet scope [show|clear|ticket]
@@ -43,7 +45,8 @@ ${c.bold('Before an AI task')}
 ${c.bold('After an AI task')}
   stet guard [--staged] [--base ref] [--warn]   Flag changes outside scope or in protected paths
                                       Warns when the branch is behind origin/main (fetched; --no-fetch to skip)
-  stet check [--only L1,L2]                      Run locked behaviours; non-zero exit if any broke
+  stet check [--only L1,L2] [--no-baseline]      Run locked behaviours; non-zero exit if this change broke any
+                                      Failures are re-run on origin/main: already failing there = not yours
   stet scope done [--commit] [--force]           Guard + check, then commit the task's files and close the scope
 
 ${c.bold('Understand the code')}
@@ -57,7 +60,7 @@ ${c.bold('Linear')}  (optional · needs LINEAR_API_KEY in your shell)
   stet scope set LIN-142 --allow "<globs>"  Uses the Linear title as the task
 
 ${c.bold('Shipping')}
-  stet pr [--what "<why>"] [--base main] [--check] [--stdout]
+  stet pr [--what "<why>"] [--title "<title>"] [--base main] [--check] [--stdout]
                                       Commit message + PR description from the diff, scope, checks and decisions
                                       Compares with the up-to-date origin/main by default
                                       Then: git commit -F .stet/.cache/commit.txt
@@ -71,6 +74,7 @@ ${c.bold('Memory')}
                                       Locks the output itself (an export, a route list…); any change fails stet check
   stet lock approve L3 --why "<reason>"         Accept an intended output change (logged as a decision)
   stet lock suggest [--add]           Lock what Stet finds: test suites and "TypeScript compiles"
+  stet lock cmd L1 "<new command>"    Change a lock's proof command
   stet lock [list|rm L2|rename L1 "<behaviour>"]   (add refuses a duplicate command; --force to override)
   stet decide "<decision>" [--why "<reason>"]   Append to the decision log
   stet decisions [--all]
@@ -109,9 +113,9 @@ async function main() {
   const r = new core.Repo(root);
   let res;
   switch (cmd) {
-    case 'init': res = core.init(r, { name: fl.name, mcp: fl.mcp, badge: fl.badge, ci: fl.ci ? (fl['no-pr-format'] ? 'no-pr-format' : true) : false, agent: fl.agent }); break;
+    case 'init': res = core.init(r, { name: fl.name, mcp: fl.mcp, badge: fl.badge, ci: fl.ci ? (fl['pr-format'] ? 'pr-format' : true) : false, agent: fl.agent, force: fl.force }); break;
     case 'agent': res = core.agentInstall(r, { uninstall: fl.uninstall || sub === 'uninstall' }); break;
-    case 'ci': res = core.ciWorkflow(r, { force: fl.force, prFormat: !fl['no-pr-format'] }); break;
+    case 'ci': res = core.ciWorkflow(r, { force: fl.force, prFormat: !!fl['pr-format'] && !fl['no-pr-format'] }); break;
     case 'badge': res = core.badge(r, { add: fl.add }); break;
     case 'sync': res = core.sync(r); break;
     case 'decide': res = core.decide(r, [sub, ...rest].filter(Boolean).join(' '), { why: fl.why }); break;
@@ -120,12 +124,13 @@ async function main() {
       if (!sub || sub === 'list' || sub === 'ls') res = core.lockList(r);
       else if (sub === 'add') res = core.lockAdd(r, rest.join(' '), { cmd: fl.cmd, protect: fl.protect, snapshot: fl.snapshot, mask: fl.mask, force: fl.force });
       else if (sub === 'suggest') res = core.lockSuggest(r, { add: fl.add });
+      else if (sub === 'cmd') res = core.lockCmd(r, rest[0], rest.slice(1).join(' '));
       else if (sub === 'rename') res = core.lockRename(r, rest[0], rest.slice(1).join(' '));
       else if (sub === 'approve') res = core.lockApprove(r, rest[0], { why: fl.why });
       else if (sub === 'rm' || sub === 'remove') res = core.lockRm(r, rest[0]);
       else throw new core.StetError('Usage: stet lock [list|add|suggest|rm|rename|approve]');
       break;
-    case 'check': res = core.check(r, { only: fl.only }); break;
+    case 'check': res = core.check(r, { only: fl.only, baseline: fl['no-baseline'] ? false : undefined, noFetch: fl['no-fetch'] }); break;
     case 'scope':
       if (!sub || sub === 'show') res = core.scopeShow(r);
       else if (sub === 'set') {
@@ -142,7 +147,7 @@ async function main() {
             notes.push(`${c.green('✓')} Linear: ${issue.title}${issue.state ? c.dim(' · ' + issue.state.name) : ''}`);
           } catch (e) { notes.push(c.yellow(`! Linear: ${e.message.split('\n')[0]} (scope set anyway)`)); }
         }
-        res = core.scopeSet(r, task, { allow: fl.allow, ticket: fl.ticket, strict: fl.strict });
+        res = core.scopeSet(r, task, { allow: fl.allow, ticket: fl.ticket, strict: fl.strict, includeCurrent: fl['include-current'] });
         if (notes.length) res.text += '\n' + notes.map((n) => '  ' + n).join('\n');
       }
       else if (sub === 'ticket') res = core.scopeTicket(r);
@@ -184,9 +189,9 @@ async function main() {
       if (sub === 'template') { res = core.prTemplateInit(r); break; }
       if (sub) throw new core.StetError('Usage: stet pr [--what "…"] [--base main] [--check] [--stdout] [--create [--draft]] | stet pr lint <file|-> | stet pr template');
       const what = typeof fl.what === 'string' ? fl.what : undefined;
-      if (fl.create) { res = core.prCreate(r, { what, base: fl.base, draft: fl.draft, noFetch: fl['no-fetch'] }); break; }
+      if (fl.create) { res = core.prCreate(r, { what, base: fl.base, draft: fl.draft, noFetch: fl['no-fetch'], title: fl.title }); break; }
       core.setColor(false);
-      const p = core.pr(r, { base: fl.base, runCheck: fl.check, what, noFetch: fl['no-fetch'] });
+      const p = core.pr(r, { base: fl.base, runCheck: fl.check, what, noFetch: fl['no-fetch'], title: fl.title });
       core.setColor((process.stdout.isTTY || process.env.STET_COLOR === '1') && !process.env.NO_COLOR && !fl['no-color']);
       if (fl.stdout) { process.stdout.write(p.text); return; }
       const copied = core.copyToClipboard(p.data.pr);

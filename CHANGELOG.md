@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0 — 2026-11-28
+From a tester's week on a FastAPI + Next.js repo with Claude Code.
+- **Already broken on main, or broken by you?** When a lock fails, `stet check` re-runs it on `origin/main` in a temporary git worktree (sharing your `node_modules`, `.venv` and `.env` files). Failing there too: marked *already failing on main, not caused by this change*, and it doesn't fail your check. Passing there: *broken by this change*. `--no-baseline` skips it; `"failOnPreexisting": true` keeps old breaks failing.
+- **Python locks without an active venv.** `stet init` locks `.venv/bin/python -m pytest -q` when the project has a `.venv` or `venv`. `stet lock suggest` fixes older `pytest -q` locks, and the new `stet lock cmd L1 "<command>"` changes any lock's command.
+- **No more second `.stet/`.** If `origin/main` already has Stet, `stet init` stops and says to `git pull` instead (two separate inits are what made `git pull` fail). `init`, `ci` and `status` warn when `.gitignore` hides `.stet/` (CI then can't see scope or locks), and `status` reminds you to commit it once.
+- **Scope set is harder to get wrong.** It warns when an `--allow` path matches no file and suggests the one you probably meant (`global.css` → `src/app/global.css`). Changes made before `scope set` are explained up front; `--include-current` counts them as part of the task.
+- **The scope belongs to its branch.** On any other branch (main, a teammate's) guard and the commit hook only check protected paths and locks, so they stop blocking unrelated work.
+- **PR format is opt-in.** `stet ci` no longer requires the `stet pr` description format; `stet ci --pr-format` turns it on. PR titles use the single commit's subject when it's descriptive, and `--title` sets one.
+
 ## 0.7.4 — 2026-11-27
 - The anonymous usage question is now asked once to people who set up Stet before 0.7.3, on their next successful command at a terminal (not only on `stet init`). Default is still No. It is never asked inside a git hook, in CI, with `--json`, or by agents and the MCP server, and never again once answered. `stet telemetry on|off` changes the answer.
 

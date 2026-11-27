@@ -127,6 +127,7 @@ $ stet check
 | `stet sync` | Regenerate the Stet block in `AGENTS.md` (other commands do this automatically). |
 | `stet scope set "<task>" --allow "<globs>" [--ticket LIN-142]` | Agree the task and the files it may touch. Records the current commit as the base. A ticket ID at the start of the task is picked up automatically. |
 | `stet scope set … --strict` | Refuse to start a scope while there are uncommitted files. Without it, earlier uncommitted work is *carried*: guard ignores it unless it changes again. |
+| `stet scope set … --include-current` | Count changes you already made as part of this task. Stet also warns when an `--allow` path matches no file (and suggests the file you probably meant). A scope belongs to the branch it was set on: on other branches only protected paths and locks are checked. |
 | `stet scope add "<globs>"` / `stet scope remove "<globs>"` | Widen or narrow the open scope without resetting it (task, base and carried files are kept). |
 | `stet scope carry <file,…>` / `--all` | Mark files guard flagged as leftovers from before the scope. |
 | `stet scope done [--commit] [--force]` | Run guard and check, commit only the task's files (with the `stet pr` message) and close the scope. |
@@ -138,17 +139,18 @@ $ stet check
 | `stet lock add "<behaviour>" --snapshot "<cmd>" [--mask "<regex>"]` | Lock a command's output as an approved snapshot in `.stet/snapshots/`. |
 | `stet lock approve L3 --why "<reason>"` | Accept a changed snapshot on purpose; logged as a decision. |
 | `stet lock [list\|rm L2]` | List locks with their last result, or remove one. |
-| `stet check [--only L1,L2]` | Run locked behaviours. Exits 1 if any fail and shows the failing lines. |
+| `stet check [--only L1,L2] [--no-baseline]` | Run locked behaviours. Anything that fails is re-run on `origin/main` (in a temporary worktree that shares your installed dependencies): if it fails there too it's marked *already failing on main, not caused by this change* and doesn't fail your check (`"failOnPreexisting": true` makes it). Exits 1 only for what this change broke. |
+| `stet lock cmd L1 "<command>"` | Change a lock's proof command. Python projects with a `.venv`/`venv` get `.venv/bin/python -m pytest -q`, so locks run without activating it; `stet lock suggest` fixes older `pytest -q` locks. |
 | `stet context [--files "<globs>"] [--changed] [--diff] [--copy\|--stdout\|--out f]` | Build the context pack. By default it writes `.stet/context.md` and copies it to the clipboard. |
 | `stet decide "<decision>" [--why "<reason>"]` | Add to the decision log. |
 | `stet decisions [--all]` | List decisions. |
 | `stet ticket [LIN-142] [--stdout] [--cached]` | Fetch a Linear ticket (needs `LINEAR_API_KEY`). It is included in `stet context` and linked in `stet pr`. With no ID, shows the current scope's ticket. |
-| `stet pr [--what "…"] [--base main] [--check] [--stdout]` | Write `.stet/.cache/commit.txt` and `.stet/.cache/pr.md`: ticket, changed files, scope result, `stet check` results and decisions logged during the task. `--what` fills in "What and why", the only part you write. Compares with the up-to-date `origin/main` by default. `--check` runs the locks first. |
+| `stet pr [--what "…"] [--title "…"] [--base main] [--check] [--stdout]` | Write `.stet/.cache/commit.txt` and `.stet/.cache/pr.md`: ticket, changed files, scope result, `stet check` results and decisions logged during the task. `--what` fills in "What and why", the only part you write. Compares with the up-to-date `origin/main` by default. `--check` runs the locks first. The title is the single commit's subject when it's descriptive, else the task; `--title` sets it. |
 | `stet pr --create --what "…" [--draft]` | Push the branch and open the PR with the GitHub CLI, in this repo's format. |
 | `stet pr lint <file\|->` | Fail a PR description that doesn't follow the format: missing sections, unwritten "What and why", hand-edited facts. Use it in CI. |
 | `stet pr template` | Write `.stet/pr-template.md` to set your own PR sections. |
 | `stet agent [--uninstall]` | Claude Code hook in `.claude/settings.json`: before Claude opens or edits a PR (`gh pr create`, `gh pr edit --body`, GitHub MCP tools), Stet lints the description and blocks one that doesn't follow the format, telling Claude to use `stet pr --create`. `stet init --agent` does it during setup. |
-| `stet ci [--no-pr-format] [--force]` | Write `.github/workflows/stet.yml` so guard, check and the PR format check run on every pull request. `stet init --ci` does it during setup. |
+| `stet ci [--pr-format] [--force]` | Write `.github/workflows/stet.yml` so guard and check run on every pull request. `--pr-format` also requires the `stet pr` description format (off by default). `stet init --ci` does it during setup. CI reads your scope and locks from the committed `.stet/`, so commit it; Stet warns if `.gitignore` hides it. |
 | `stet study "<topic>" [--out file] [--max 12]` | Map a flow: key and supporting files, routes, Mermaid diagram, tests, protection gaps. Writes `docs/flows/<topic>.md`. |
 | `stet study` | List studied flows and which are out of date. |
 | `stet context --flow <topic>` | Context pack with the flow doc and all its files. |

@@ -413,7 +413,7 @@ test('scope set carries uncommitted earlier work; guard ignores it until it chan
   fs.writeFileSync(path.join(d, 'src/auth/new.js'), '1;\n');
   let r = stet(d, 'scope', 'set', 'CSV export', '--allow', 'src/export/**');
   assert.strictEqual(r.code, 0, r.out);
-  assert.match(r.out, /2 uncommitted files from earlier work\. Carried/);
+  assert.match(r.out, /2 files were already changed before this scope, so guard will ignore them/);
   fs.writeFileSync(path.join(d, 'src/export/csv.js'), 'module.exports = 1;\n');
   r = stet(d, 'guard');
   assert.strictEqual(r.code, 0, r.out);
@@ -674,15 +674,18 @@ test('stet ci writes a pull request workflow with the PR format check; init --ci
   const { d } = repo();
   fs.writeFileSync(path.join(d, 'package-lock.json'), '{}');
   stet(d, 'init');
+  // 0.8.0: the PR format check is opt-in.
   let r = stet(d, 'ci');
   assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /PR descriptions are not checked/);
   const f = path.join(d, '.github/workflows/stet.yml');
   let y = fs.readFileSync(f, 'utf8');
-  for (const re of [/types: \[opened, edited, synchronize, reopened\]/, /- run: npm ci/, /uses: shamazkhan\/stet-action@v1/, /pr-format: true/, /fetch-depth: 0/]) assert.match(y, re);
+  for (const re of [/types: \[opened, synchronize, reopened\]/, /- run: npm ci/, /uses: shamazkhan\/stet-action@v1/, /fetch-depth: 0/]) assert.match(y, re);
+  assert.doesNotMatch(y, /pr-format/);
   assert.match(stet(d, 'ci').out, /already exists/);
-  r = stet(d, 'ci', '--force', '--no-pr-format');
+  r = stet(d, 'ci', '--force', '--pr-format');
   y = fs.readFileSync(f, 'utf8');
-  assert.doesNotMatch(y, /pr-format/); assert.doesNotMatch(y, /edited/);
+  assert.match(y, /pr-format: true/); assert.match(y, /edited/);
   const { d: d2 } = repo();
   r = stet(d2, 'init', '--ci');
   assert.match(r.out, /Wrote .*\.github\/workflows\/stet\.yml/);
@@ -834,4 +837,102 @@ test('0.7.3: usage count is opt-in, sends only id/version/command/os once a day,
   assert.strictEqual(await usage.askOnce(core.c, { interactive: true }), null);
   delete process.env.STET_CONFIG_DIR;
   srv.close();
+});
+
+// ---------- 0.8.0: tester feedback ----------
+test('0.8.0: pytest lock uses the project virtualenv; lock suggest fixes old locks; lock cmd', () => {
+  const { d, g } = repo();
+  fs.mkdirSync(path.join(d, 'backend/tests'), { recursive: true });
+  fs.mkdirSync(path.join(d, 'backend/.venv/bin'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'backend/pyproject.toml'), '[project]\nname="api"\ndependencies=["fastapi"]\n');
+  fs.writeFileSync(path.join(d, 'backend/.venv/bin/python'), '#!/bin/sh\n');
+  g('add', 'backend/pyproject.toml'); g('commit', '-qm', 'backend');
+  let r = stet(d, 'init');
+  assert.match(r.out, /Test suite passes \(backend\/\) \(cd backend && \.venv\/bin\/python -m pytest -q\)/);
+  // an older setup with plain pytest
+  const L = JSON.parse(fs.readFileSync(path.join(d, '.stet/locks.json'), 'utf8'));
+  const i = L.findIndex((l) => /pytest/.test(l.cmd)); const id = L[i].id;
+  L[i].cmd = 'cd backend && pytest -q'; fs.writeFileSync(path.join(d, '.stet/locks.json'), JSON.stringify(L));
+  r = stet(d, 'lock', 'suggest');
+  assert.match(r.out, new RegExp(`stet lock cmd ${id} "cd backend && \\.venv/bin/python -m pytest -q"`));
+  r = stet(d, 'lock', 'cmd', id, 'cd backend && python3 -m pytest');
+  assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /now: cd backend && python3 -m pytest/);
+  assert.notStrictEqual(stet(d, 'lock', 'cmd', 'L99', 'x').code, 0);
+});
+
+test('0.8.0: scope set warns about --allow paths that match nothing; --include-current; scope belongs to its branch', () => {
+  const { d, g } = repo();
+  stet(d, 'init'); g('add', '-A'); g('commit', '-qm', 'stet');
+  fs.writeFileSync(path.join(d, 'src/auth/login.js'), 'module.exports = () => 2;\n'); // made before the scope
+  let r = stet(d, 'scope', 'set', 'Styles', '--allow', 'src/export/**,login.js,src/styles/global.css');
+  assert.match(r.out, /--allow "login\.js" matches no file yet\.\s+Did you mean src\/auth\/login\.js\?/);
+  assert.match(r.out, /--allow "src\/styles\/global\.css" matches no file yet\. Fine if the task creates it/);
+  assert.doesNotMatch(r.out, /"src\/export\/\*\*" matches no file/);
+  assert.match(r.out, /already changed before this scope.*\n.*\n.*--include-current/);
+  assert.strictEqual(stet(d, 'guard').code, 0); // carried
+  r = stet(d, 'scope', 'set', 'Styles', '--allow', 'src/export/**', '--include-current');
+  assert.match(r.out, /counted as part of this task/);
+  assert.strictEqual(stet(d, 'guard').code, 1); // now it counts, and it's out of scope
+  // the scope was set on main; on another branch it doesn't apply (the hook won't block unrelated work)
+  g('switch', '-q', '-c', 'other');
+  fs.writeFileSync(path.join(d, 'src/auth/login.js'), 'module.exports = () => 3;\n'); g('add', 'src/auth/login.js');
+  r = stet(d, 'guard', '--staged');
+  assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /belongs to branch main/);
+  g('switch', '-q', '-f', 'main');
+  r = stet(d, 'guard'); assert.doesNotMatch(r.out, /belongs to branch/);
+});
+
+test('0.8.0: init refuses a second .stet when origin/main already has one; --force overrides', () => {
+  const { d, g } = withRemote();
+  stet(d, 'init'); g('add', '-A'); g('commit', '-qm', 'stet'); g('push', '-q', 'origin', 'main');
+  // a teammate's clone made before Stet landed, with no .stet/
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'stet-mate-'));
+  cp.execFileSync('git', ['clone', '-q', '--depth', '1', fs.realpathSync(cp.execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: d, encoding: 'utf8' }).trim())], { cwd: other });
+  const mate = path.join(other, fs.readdirSync(other)[0]);
+  fs.rmSync(path.join(mate, '.stet'), { recursive: true, force: true }); // as if their checkout predates it
+  let r = stet(mate, 'init');
+  assert.notStrictEqual(r.code, 0); assert.match(r.out, /already set up on origin\/main/); assert.match(r.out, /git pull origin main/);
+  assert.ok(!fs.existsSync(path.join(mate, '.stet/config.json')));
+  r = stet(mate, 'init', '--force'); assert.strictEqual(r.code, 0, r.out);
+});
+
+test('0.8.0: check re-runs failures on origin/main and separates old breaks from new ones', () => {
+  const { d, g } = withRemote();
+  stet(d, 'init');
+  fs.writeFileSync(path.join(d, 'state.txt'), 'bad\n');
+  fs.writeFileSync(path.join(d, 'ok.txt'), 'ok\n');
+  g('add', '-A'); g('commit', '-qm', 'stet'); g('push', '-q', 'origin', 'main');
+  const cmd = (f) => `node -e "process.exit(require('fs').readFileSync('${f}','utf8').trim()==='ok'?0:1)"`;
+  stet(d, 'lock', 'add', 'State is ok', '--cmd', cmd('state.txt'));   // already broken on main
+  stet(d, 'lock', 'add', 'Other is ok', '--cmd', cmd('ok.txt'));      // fine on main
+  g('switch', '-q', '-c', 'feature');
+  fs.writeFileSync(path.join(d, 'src/export/csv.js'), 'x\n');
+  let r = stet(d, 'check', '--no-fetch');
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /L\d+\s+already failing on origin\/main, not caused by this change/);
+  assert.match(r.out, /Nothing this change broke/);
+  assert.strictEqual(stet(d, 'check', '--no-fetch', '--no-baseline').code, 1);
+  // now the change breaks something that works on main
+  fs.writeFileSync(path.join(d, 'ok.txt'), 'broken\n');
+  r = stet(d, 'check', '--no-fetch');
+  assert.strictEqual(r.code, 1, r.out);
+  assert.match(r.out, /passes on origin\/main: broken by this change/);
+  // strict teams can fail on old breaks too
+  const cfgP = path.join(d, '.stet/config.json');
+  fs.writeFileSync(path.join(d, 'ok.txt'), 'ok\n');
+  fs.writeFileSync(cfgP, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfgP, 'utf8')), failOnPreexisting: true }));
+  assert.strictEqual(stet(d, 'check', '--no-fetch').code, 1);
+  // no stray worktrees left behind
+  assert.strictEqual(cp.execFileSync('git', ['worktree', 'list'], { cwd: d, encoding: 'utf8' }).trim().split('\n').length, 1);
+});
+
+test('0.8.0: PR title from a descriptive single commit, or --title', () => {
+  const { d, g } = repo();
+  stet(d, 'init'); g('add', '-A'); g('commit', '-qm', 'stet');
+  stet(d, 'scope', 'set', 'LIN-9 CSV export', '--allow', 'src/export/**');
+  fs.writeFileSync(path.join(d, 'src/export/csv.js'), 'x\n'); g('add', '-A'); g('commit', '-qm', 'LIN-9: Download rows as a CSV file');
+  let r = stet(d, 'pr', '--stdout', '--base', 'HEAD~1');
+  assert.match(r.out, /## LIN-9: Download rows as a CSV file/);
+  r = stet(d, 'pr', '--stdout', '--base', 'HEAD~1', '--title', 'Custom title here');
+  assert.match(r.out, /## Custom title here/);
 });
